@@ -12,36 +12,36 @@ MARKER_TDS = "# TECHNICAL DATA SHEET (TDS)"
 MARKER_COA = "# CERTIFICATE OF ANALYSIS (COA)"
 MARKER_MSDS = "# MATERIAL SAFETY DATA SHEET (MSDS)"
 
-# Consistent 10pt, border #444, professional look; table-layout:fixed + max-width so cells wrap in PDF
-_B = "1px solid #444"
-_STYLE_TABLE = f"border-collapse: collapse; table-layout: fixed; width: 100%; max-width: 100%; margin: 4px 0; font-size: 10pt; border: {_B}; line-height: 1.3;"
-_STYLE_TH = f"border: {_B}; padding: 4px 6px; text-align: left; font-weight: bold; background: #f2f2f2; vertical-align: top; font-size: 10pt; line-height: 1.3; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;"
-_STYLE_TD = f"border: {_B}; padding: 4px 6px; text-align: left; vertical-align: top; font-size: 10pt; line-height: 1.3; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;"
-_STYLE_TD_LABEL = f"border: {_B}; padding: 4px 6px; text-align: left; vertical-align: top; font-size: 10pt; line-height: 1.3; font-weight: bold; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;"
-# Quotation: same 10pt, clean table format, slightly tighter padding
-_STYLE_TABLE_COMPACT = f"border-collapse: collapse; table-layout: fixed; width: 100%; max-width: 100%; margin: 4px 0; font-size: 10pt; border: {_B}; line-height: 1.3;"
-_STYLE_TH_COMPACT = f"border: {_B}; padding: 3px 6px; text-align: left; font-weight: bold; background: #f2f2f2; vertical-align: top; font-size: 10pt; line-height: 1.3; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;"
-_STYLE_TD_COMPACT = f"border: {_B}; padding: 3px 6px; text-align: left; vertical-align: top; font-size: 10pt; line-height: 1.3; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;"
-_STYLE_TD_LABEL_COMPACT = f"border: {_B}; padding: 3px 6px; text-align: left; vertical-align: top; font-size: 10pt; line-height: 1.3; font-weight: bold; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;"
-_STYLE_HR = "border: none; border-top: 1px solid #444; margin: 6px 0 8px 0;"
-_STYLE_H1 = "font-size: 14pt; font-weight: bold; margin: 6px 0 4px 0; text-align: center; line-height: 1.2; page-break-after: avoid; text-transform: uppercase; letter-spacing: 0.04em;"
-_STYLE_H1_QUOTATION = "font-size: 14pt; font-weight: bold; margin: 0 0 8px 0; text-align: center; line-height: 1.2; page-break-after: avoid; text-transform: uppercase; letter-spacing: 0.04em;"
-_STYLE_H1_SECTION = "font-size: 14pt; font-weight: bold; margin: 8px 0 4px 0; text-align: center; line-height: 1.2; page-break-after: avoid; text-transform: uppercase; letter-spacing: 0.04em;"
-_STYLE_H2 = "font-size: 11pt; font-weight: bold; margin: 6px 0 4px 0; line-height: 1.25; page-break-after: avoid; text-transform: uppercase; letter-spacing: 0.03em;"
-_STYLE_H3 = "font-size: 10.5pt; font-weight: bold; margin: 5px 0 3px 0; line-height: 1.25; page-break-after: avoid; letter-spacing: 0.02em;"
-_STYLE_P = "margin: 3px 0 5px 0; line-height: 1.35; font-size: 10pt;"
-_STYLE_P_BOLD = "margin: 3px 0 5px 0; font-weight: bold; line-height: 1.35; font-size: 10pt;"
-# COA conclusion block: minimal margin so it stays with table on same page
-_STYLE_P_COA_CONCLUSION = "margin: 0 0 2px 0; line-height: 1.3; font-size: 10pt;"
-_STYLE_P_BOLD_COA_CONCLUSION = "margin: 0 0 2px 0; font-weight: bold; line-height: 1.3; font-size: 10pt;"
-_STYLE_UL = "margin: 3px 0 4px 0; padding-left: 1.35em;"
-_STYLE_UL_SUB = "margin: 1px 0 2px 0; padding-left: 1.5em; list-style-type: circle;"
-_STYLE_LI = "margin: 1px 0; line-height: 1.35;"
-_STYLE_LI_SUB = "margin: 1px 0; line-height: 1.35;"
+# Border style
+_B = "1px solid #333"
 
-PAGE_BREAK = '<div style="page-break-after: always;"></div>'
+# Non-quotation tables: full inline styles for TDS/COA/MSDS
+_STYLE_TABLE = f"border-collapse:collapse;table-layout:fixed;width:100%;border:{_B};"
+_STYLE_TH = f"border:{_B};padding:4px 6px;text-align:left;font-weight:bold;background:#f2f2f2;vertical-align:top;"
+_STYLE_TD = f"border:{_B};padding:4px 6px;text-align:left;vertical-align:top;"
+_STYLE_TD_LABEL = f"border:{_B};padding:4px 6px;text-align:left;vertical-align:top;font-weight:bold;"
 
-SECTION_HR = '<hr style="border: none; border-top: 1px solid #444; margin: 6px 0 8px 0;"/>'
+# Quotation tables: inline styles that survive export normalization
+_Q_TABLE = f"border-collapse:collapse;width:100%;border:{_B};"
+_Q_TH = f"border:{_B};text-align:left;font-weight:bold;background:#bbb;vertical-align:top;"
+_Q_TD = f"border:{_B};text-align:left;vertical-align:top;"
+_Q_TD_LABEL = f"border:{_B};text-align:left;vertical-align:top;font-weight:bold;"
+_Q_TD_BOLD = f"border:{_B};text-align:left;vertical-align:top;font-weight:bold;"
+
+_STYLE_HR = "border:none;border-top:1px solid #444;"
+_STYLE_H1 = "font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;"
+_STYLE_H2 = "font-weight:bold;text-transform:uppercase;letter-spacing:0.03em;"
+_STYLE_H3 = "font-weight:bold;letter-spacing:0.02em;"
+_STYLE_P = ""
+_STYLE_P_BOLD = "font-weight:bold;"
+_STYLE_P_COA_CONCLUSION = ""
+_STYLE_P_BOLD_COA_CONCLUSION = "font-weight:bold;"
+_STYLE_UL = ""
+_STYLE_LI = ""
+_STYLE_LI_SUB = ""
+
+PAGE_BREAK = '<div style="page-break-after:always;"></div>'
+SECTION_HR = '<hr style="border:none;border-top:1px solid #444;"/>'
 
 
 def _normalize_spacing(text: str) -> str:
@@ -53,53 +53,166 @@ def _normalize_spacing(text: str) -> str:
     return "\n".join(out)
 
 
-def _merge_label_value_lines(text: str) -> str:
-    """
-    When AI outputs label on one line and value on the next (causing broken tables),
-    merge into pipe-separated rows: "Label|Value".
-    """
-    lines = text.splitlines()
-    out: list[str] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-        # Candidate label: ends with : and short; not a heading
-        is_label = (
-            stripped.endswith(":")
-            and len(stripped) <= 55
-            and not stripped.startswith("#")
-            and "|" not in stripped
-        )
-        if is_label and i + 1 < len(lines):
-            next_line = lines[i + 1].strip()
-            # Value line: non-empty, no pipe, not a section marker or heading
-            if (
-                next_line
-                and "|" not in next_line
-                and not next_line.startswith("#")
-                and next_line not in ("---", "—", "---TABLE---")
-                and not next_line.startswith("•")
-            ):
-                label = stripped.rstrip(":").strip()
-                out.append(f"{label}|{next_line}")
-                i += 2
-                continue
-        out.append(line)
-        i += 1
-    return "\n".join(out)
+# Quotation table types
+_Q_TABLE_CUSTOMER = 0
+_Q_TABLE_DELIVERY = 1
+_Q_TABLE_ITEMS = 2
+_Q_TABLE_TOTALS = 3
 
 
-# Quotation block class names (order must match AI reference: meta, parties, terms, items, totals, bank, signature)
-_QUOTATION_TABLE_CLASSES = [
-    "invoice-meta",
-    "invoice-parties",
-    "invoice-terms",
-    "invoice-items",
-    "invoice-totals",
-    "invoice-bank",
-    "invoice-signature",
-]
+def _detect_table_type(table_rows: list[str]) -> int:
+    """Detect quotation table type based on content."""
+    if not table_rows:
+        return -1
+    
+    first_row = table_rows[0].lower()
+    
+    # Items table: starts with "No." header
+    if first_row.startswith("no.") or first_row.startswith("no|"):
+        return _Q_TABLE_ITEMS
+    
+    # Totals table: contains "Total Amount"
+    if "total amount" in first_row.lower():
+        return _Q_TABLE_TOTALS
+    
+    # Customer table: contains "Bill To"
+    if "bill to" in first_row.lower():
+        return _Q_TABLE_CUSTOMER
+    
+    # Delivery table: contains "Delivery" as first cell
+    if first_row.startswith("delivery"):
+        return _Q_TABLE_DELIVERY
+    
+    return -1
+
+
+def _flush_quotation_table(
+    table_rows: list[str],
+    html_lines: list[str],
+    table_index: int,
+) -> None:
+    """Render quotation table with proper column widths based on table type."""
+    if not table_rows:
+        return
+
+    # Detect table type from content instead of relying on index
+    detected_type = _detect_table_type(table_rows)
+    table_type = detected_type if detected_type >= 0 else table_index
+
+    # Determine label columns
+    if table_type == _Q_TABLE_CUSTOMER:
+        label_cols = {0, 2}
+    elif table_type == _Q_TABLE_DELIVERY:
+        label_cols = {0, 2}
+    elif table_type == _Q_TABLE_ITEMS:
+        label_cols = set()
+    elif table_type == _Q_TABLE_TOTALS:
+        label_cols = {0}
+    else:
+        label_cols = set()
+
+    # Add class for each table type to apply CSS styles
+    if table_type == _Q_TABLE_CUSTOMER:
+        table_class = ' class="customer-table"'
+    elif table_type == _Q_TABLE_DELIVERY:
+        table_class = ' class="delivery-table"'
+    elif table_type == _Q_TABLE_ITEMS:
+        table_class = ' class="items-table"'
+    elif table_type == _Q_TABLE_TOTALS:
+        table_class = ' class="totals-table"'
+    else:
+        table_class = ''
+    html_lines.append(f'<table{table_class} style="{_Q_TABLE}">')
+    
+    # Add colgroup for items table to control column widths
+    if table_type == _Q_TABLE_ITEMS:
+        html_lines.append('<colgroup><col style="width:4%"/><col style="width:42%"/><col style="width:14%"/><col style="width:20%"/><col style="width:20%"/></colgroup>')
+
+    for row_idx, row in enumerate(table_rows):
+        # Split by pipe and keep all cells (including empty ones)
+        raw_cells = row.split("|")
+        cells = [c.strip() for c in raw_cells]
+        
+        # For 4-column tables, ensure we have exactly 4 cells
+        if table_type in (_Q_TABLE_CUSTOMER, _Q_TABLE_DELIVERY):
+            while len(cells) < 4:
+                cells.append("")
+            cells = cells[:4]
+        
+        if not any(cells):
+            continue
+
+        # Items table: first row is header
+        is_header = table_type == _Q_TABLE_ITEMS and row_idx == 0
+        
+        html_lines.append("<tr>")
+        for col_idx, c in enumerate(cells):
+            # Handle description - force line breaks before Make: and HSN:
+            # Apply to column 1 (Description) of items table
+            if table_type == _Q_TABLE_ITEMS and col_idx == 1 and row_idx > 0:
+                import re
+                # Clean up: remove // separators and extra spaces
+                text = re.sub(r'\s*//\s*', ' ', c)
+                text = re.sub(r'\s+', ' ', text).strip()
+                
+                # Split into parts: Product Name, Make:..., HSN:...
+                make_match = re.search(r'Make\s*:', text, re.IGNORECASE)
+                hsn_match = re.search(r'HSN\s*:', text, re.IGNORECASE)
+                
+                parts = []
+                if make_match:
+                    product_name = text[:make_match.start()].strip()
+                    if product_name:
+                        parts.append(escape(product_name))
+                    
+                    if hsn_match and hsn_match.start() > make_match.start():
+                        make_part = text[make_match.start():hsn_match.start()].strip()
+                        hsn_part = text[hsn_match.start():].strip()
+                        parts.append(escape(make_part))
+                        parts.append(escape(hsn_part))
+                    else:
+                        make_part = text[make_match.start():].strip()
+                        parts.append(escape(make_part))
+                else:
+                    parts.append(escape(text))
+                
+                cell_content = "<br/>".join(parts) if parts else "&nbsp;"
+            else:
+                cell_content = escape(c) if c else "&nbsp;"
+            
+            # All cells use <td> to prevent TipTap from converting to <th>
+            # Use inline styles for header appearance
+            if is_header:
+                # Items table header: gray background, bold, with column widths
+                col_widths = ["4%", "42%", "14%", "20%", "20%"]
+                width_style = f"width:{col_widths[col_idx]};" if col_idx < len(col_widths) else ""
+                style = f"border:{_B};{width_style}text-align:left;font-weight:bold;vertical-align:top;background-color:#BBBBBB;"
+                if col_idx >= 2:  # Right-align numeric headers
+                    style = style.replace("text-align:left;", "text-align:right;")
+                html_lines.append(f'<td bgcolor="#BBBBBB" style="{style}"><b>{cell_content}</b></td>')
+            else:
+                # Use bold style for Total Amount row (first row of totals table)
+                is_total_row = table_type == _Q_TABLE_TOTALS and row_idx == 0
+                # Check if this is the "Total Amount" label cell
+                is_total_amount_label = table_type == _Q_TABLE_TOTALS and "Total Amount" in str(c)
+                
+                if is_total_row or is_total_amount_label:
+                    style = f"border:{_B};text-align:left;vertical-align:top;font-weight:bold;background-color:#ffffff;"
+                    cell_content = f"<strong><b>{cell_content}</b></strong>"
+                else:
+                    # Explicitly set white background for all non-header cells
+                    base_style = _Q_TD_LABEL if col_idx in label_cols else _Q_TD
+                    style = base_style + "background-color:#ffffff;"
+                # Right-align numeric columns in items table
+                if table_type == _Q_TABLE_ITEMS and col_idx >= 2:
+                    style += "text-align:right;"
+                # Right-align value column in totals
+                if table_type == _Q_TABLE_TOTALS and col_idx == 1:
+                    style += "text-align:right;"
+                html_lines.append(f'<td style="{style}">{cell_content}</td>')
+        html_lines.append("</tr>")
+    
+    html_lines.append("</table>")
 
 
 def _flush_table(
@@ -108,84 +221,80 @@ def _flush_table(
     compact: bool = False,
     table_index: int | None = None,
 ) -> None:
+    """Flush accumulated table rows as HTML table."""
     if not table_rows:
         return
+    
+    if compact and table_index is not None:
+        _flush_quotation_table(table_rows, html_lines, table_index)
+        return
+
+    # Non-quotation tables (TDS/COA/MSDS)
     col_counts = [len([c for c in row.split("|") if c.strip()]) for row in table_rows]
     two_col_kv = len(col_counts) > 0 and all(n == 2 for n in col_counts)
-    st_table = _STYLE_TABLE_COMPACT if compact else _STYLE_TABLE
-    st_th = _STYLE_TH_COMPACT if compact else _STYLE_TH
-    st_td = _STYLE_TD_COMPACT if compact else _STYLE_TD
-    st_td_label = _STYLE_TD_LABEL_COMPACT if compact else _STYLE_TD_LABEL
-    # Block class for quotation (one-page invoice)
-    block_class = ""
-    if compact and table_index is not None and 0 <= table_index < len(_QUOTATION_TABLE_CLASSES):
-        block_class = f' class="{_QUOTATION_TABLE_CLASSES[table_index]}"'
-    # Two-column label|value tables: constrain columns so value cell wraps (no overflow)
-    if compact and two_col_kv:
-        block_class = (block_class.rstrip('"') + ' label-value"') if block_class else ' class="label-value"'
-    is_items_table = compact and table_index == 3
-    ncols = len([c for c in table_rows[0].split("|") if c.strip()]) if table_rows else 0
-    # Right-align last 3 columns (Unit Price, Unit, Amount) in line-items table
-    numeric_start_col = max(0, ncols - 3) if is_items_table and ncols >= 3 else -1
-    # Signature block: detect by content so we never render it as a table (avoids PDF overflow)
-    def _is_signature_block() -> bool:
-        if not compact or not table_rows:
-            return False
-        first_cell = (table_rows[0].split("|")[0].strip() if "|" in table_rows[0] else "").lower()
-        if first_cell == "name of signatory":
-            return True
-        for row in table_rows:
-            if "|" in row:
-                left = row.split("|")[0].strip().lower()
-                if left == "declaration":
-                    return True
-        return False
-
-    if _is_signature_block():
-        # Stacked block with inline styles so PDF engine keeps content on page
-        block_style = "margin-top:8px;padding:8px 10px;border:1px solid #d0d0d0;border-radius:2px;max-width:100%;"
-        row_style = "margin-bottom:6px;"
-        label_style = "font-weight:bold;font-size:11px;margin:0 0 1px 0;display:block;"
-        value_style = "font-size:11px;line-height:1.35;margin:0 0 4px 0;display:block;width:100%;max-width:100%;word-wrap:break-word;overflow-wrap:break-word;"
-        html_lines.append(f'<div class="invoice-signature-block" style="{block_style}">')
-        for row in table_rows:
-            parts = [c.strip() for c in row.split("|")]
-            if not parts:
-                continue
-            label_text = escape(parts[0])
-            value_text = " ".join(parts[1:]).strip() if len(parts) > 1 else ""
-            value_text = escape(value_text)
-            html_lines.append(f'<div class="invoice-sig-row" style="{row_style}">')
-            html_lines.append(f'<div class="invoice-sig-label" style="{label_style}">{label_text}</div>')
-            if label_text.lower() == "declaration":
-                html_lines.append(f'<p class="invoice-sig-value invoice-sig-declaration" style="{value_style}">{value_text}</p>')
-            else:
-                html_lines.append(f'<div class="invoice-sig-value" style="{value_style}">{value_text}</div>')
-            html_lines.append("</div>")
-        html_lines.append("</div>")
-        return
-    html_lines.append(f'<table style="{st_table}"{block_class}>')
-    # Fixed column widths for 2-col label-value so value column wraps inside page
-    if compact and two_col_kv and ncols == 2:
-        html_lines.append('<colgroup><col style="width:28%"/><col style="width:72%"/></colgroup>')
+    
+    html_lines.append(f'<table style="{_STYLE_TABLE}">')
     for row_idx, row in enumerate(table_rows):
         cells = [c.strip() for c in row.split("|")]
-        cells = [escape(c) for c in cells if c is not None]
+        cells = [c for c in cells if c is not None]
         if not cells:
             continue
-        tag = "th" if row_idx == 0 else "td"
+        is_header_row = row_idx == 0
+        tag = "th" if is_header_row else "td"
         parts = []
         for col_idx, c in enumerate(cells):
-            if row_idx == 0:
-                style = st_th
+            c = escape(c)
+            if is_header_row:
+                style = _STYLE_TH
             elif two_col_kv and col_idx == 0:
-                style = st_td_label
+                style = _STYLE_TD_LABEL
             else:
-                style = st_td
-            num_class = ' class="numeric"' if numeric_start_col >= 0 and col_idx >= numeric_start_col else ""
-            parts.append(f'<{tag} style="{style}"{num_class}>{c}</{tag}>')
+                style = _STYLE_TD
+            parts.append(f'<{tag} style="{style}">{c}</{tag}>')
         html_lines.append("<tr>" + "".join(parts) + "</tr>")
     html_lines.append("</table>")
+
+
+def _render_terms_block(lines: list[str], start_idx: int, html_lines: list[str]) -> int:
+    """Render the TERMS block with signature at bottom right."""
+    i = start_idx + 1  # Skip ---TERMSBLOCK---
+    terms_lines: list[str] = []
+    signature_lines: list[str] = []
+    in_signature = False
+    
+    while i < len(lines):
+        line = lines[i].strip()
+        if line == "---TERMSBLOCK---" or line == "---TERMS---":
+            i += 1
+            break
+        if "AUTHORIZED SIGNATORY" in line.upper():
+            in_signature = True
+            signature_lines.append(line)
+        elif in_signature:
+            if line:
+                signature_lines.append(line)
+        else:
+            if line:
+                terms_lines.append(line)
+        i += 1
+    
+    # Render terms (full width)
+    html_lines.append('<div class="terms-section" style="width:100%;">')
+    for ln in terms_lines:
+        if ln.startswith("TERMS"):
+            html_lines.append(f"<p><strong>{escape(ln)}</strong></p>")
+        else:
+            html_lines.append(f"<p>{escape(ln)}</p>")
+    html_lines.append("</div>")
+    
+    # Render signature at bottom right
+    if signature_lines:
+        html_lines.append('<div style="text-align:right;margin-top:4px;">')
+        for ln in signature_lines:
+            html_lines.append(f"<p style=\"text-align:right;margin:0;\"><strong>{escape(ln)}</strong></p>")
+        html_lines.append("</div>")
+    
+    return i
 
 
 def text_to_html(text: str, compact: bool = False) -> str:
@@ -195,15 +304,14 @@ def text_to_html(text: str, compact: bool = False) -> str:
     If compact=True (for quotation), uses smaller fonts and tight padding for one-page layout.
     """
     text = _normalize_spacing(text)
-    text = _merge_label_value_lines(text)
     lines = text.splitlines()
     html_lines: list[str] = []
     in_table = False
     table_rows: list[str] = []
     in_ul = False
-    in_section_block = False  # TDS/MSDS numbered section: keep heading with content (avoid page break between)
-    in_coa_conclusion = False  # COA: Conclusion / For: / Quality Control / Authorized Signatory — keep on one page
-    table_counter = 0  # for quotation block classes (invoice-meta, invoice-parties, ...)
+    in_section_block = False
+    in_coa_conclusion = False
+    table_counter = 0
 
     def close_section_block() -> None:
         nonlocal in_section_block
@@ -227,6 +335,60 @@ def text_to_html(text: str, compact: bool = False) -> str:
     while i < len(lines):
         line = lines[i].rstrip("\n")
         stripped = line.strip()
+
+        # Skip section markers
+        if stripped.startswith("=== SECTION") and stripped.endswith("==="):
+            i += 1
+            continue
+
+        # Terms block - detect by marker OR by "TERMS & CONDITIONS:" text
+        if stripped in ("---TERMS---", "---TERMSBLOCK---") or stripped.startswith("TERMS & CONDITIONS"):
+            close_ul()
+            if stripped.startswith("TERMS & CONDITIONS"):
+                # Collect all terms and signature lines
+                terms_lines: list[str] = [stripped]
+                signature_lines: list[str] = []
+                in_sig = False
+                i += 1
+                while i < len(lines):
+                    ln = lines[i].strip()
+                    if ln == "---TERMSBLOCK---" or ln == "---TERMS---":
+                        i += 1
+                        break
+                    if ln.startswith("#") or ("|" in ln and not in_sig):
+                        break
+                    if "AUTHORIZED SIGNATORY" in ln.upper():
+                        in_sig = True
+                        signature_lines.append(ln)
+                    elif in_sig:
+                        if ln:
+                            signature_lines.append(ln)
+                    else:
+                        if ln:
+                            terms_lines.append(ln)
+                    i += 1
+                # Render terms first (full width)
+                html_lines.append('<div class="terms-section" style="width:100%;">')
+                for ln in terms_lines:
+                    if ln.startswith("TERMS"):
+                        html_lines.append(f"<p><strong>{escape(ln)}</strong></p>")
+                    else:
+                        html_lines.append(f"<p>{escape(ln)}</p>")
+                html_lines.append("</div>")
+                # Render signature at bottom right (small, right-aligned)
+                if signature_lines:
+                    html_lines.append('<div style="text-align:right;margin-top:4px;">')
+                    for ln in signature_lines:
+                        html_lines.append(f"<p style=\"text-align:right;margin:0;\"><strong>{escape(ln)}</strong></p>")
+                    html_lines.append("</div>")
+            else:
+                i = _render_terms_block(lines, i, html_lines)
+            continue
+        
+        # Skip signature block markers (handled in terms block)
+        if stripped == "---SIGNATURE---":
+            i += 1
+            continue
 
         # Horizontal rule
         if stripped in ("---", "—", "___", "__________"):
@@ -284,13 +446,13 @@ def text_to_html(text: str, compact: bool = False) -> str:
             table_rows = []
             continue
 
-        # Sub-bullet (o followed by space/tab) — indent under previous bullet
+        # Sub-bullet
         if stripped.startswith("o ") or stripped.startswith("o\t"):
             content = stripped[1:].strip()
             if not in_ul:
                 html_lines.append(f'<ul style="{_STYLE_UL}">')
                 in_ul = True
-            html_lines.append(f'<li style="{_STYLE_LI_SUB}; margin-left: 1em;">{escape(content)}</li>')
+            html_lines.append(f'<li style="{_STYLE_LI_SUB}">{escape(content)}</li>')
             i += 1
             continue
         # Bullets
@@ -307,26 +469,19 @@ def text_to_html(text: str, compact: bool = False) -> str:
 
         if not stripped:
             close_coa_conclusion()
-            blank_style = "margin: 0; line-height: 0.2;" if compact else "margin: 1px 0; line-height: 0.35;"
-            html_lines.append(f"<p style=\"{blank_style}\"><br/></p>")
+            html_lines.append("<p><br/></p>")
             i += 1
             continue
 
-        # Skip section markers (=== SECTION X: ... ===) - these are structural guides for AI
-        if stripped.startswith("=== SECTION") and stripped.endswith("==="):
-            i += 1
-            continue
-
-        # Headings and paragraphs (quotation/doc hierarchy)
+        # Headings and paragraphs
         if stripped.startswith("# "):
             title_text = stripped[2:].strip()
-            # Big clear heading for the 3 doc sections (TDS, COA, MSDS)
             if "TECHNICAL DATA SHEET" in title_text or "CERTIFICATE OF ANALYSIS" in title_text or "MATERIAL SAFETY DATA SHEET" in title_text:
-                html_lines.append(f'<h1 style="{_STYLE_H1_SECTION}">{escape(title_text)}</h1>')
+                html_lines.append(f'<h1 style="{_STYLE_H1}">{escape(title_text)}</h1>')
             else:
                 html_lines.append(f'<h1 style="{_STYLE_H1}">{escape(title_text)}</h1>')
         elif stripped.upper() == "QUOTATION":
-            html_lines.append(f'<h1 class="quotation-title" style="{_STYLE_H1_QUOTATION}">{escape(stripped)}</h1>')
+            html_lines.append(f'<h1 style="{_STYLE_H1}">{escape(stripped)}</h1>')
         elif stripped.rstrip(":") in ("Supplier", "Bill To", "Ship To", "Delivery", "Declaration") or stripped.startswith("BANK DETAIL"):
             html_lines.append(f'<h2 style="{_STYLE_H2}">{escape(stripped)}</h2>')
         elif stripped.lower().rstrip(":") == "conclusion":
@@ -346,12 +501,12 @@ def text_to_html(text: str, compact: bool = False) -> str:
         ):
             if stripped.startswith("Section "):
                 close_section_block()
-                html_lines.append('<div class="section-block" style="page-break-inside: avoid; break-inside: avoid;">')
+                html_lines.append('<div class="section-block">')
                 in_section_block = True
             html_lines.append(f'<h2 style="{_STYLE_H2}">{escape(stripped)}</h2>')
         elif re.match(r"^\d+\.\s", stripped):
             close_section_block()
-            html_lines.append('<div class="section-block" style="page-break-inside: avoid; break-inside: avoid;">')
+            html_lines.append('<div class="section-block">')
             in_section_block = True
             html_lines.append(f'<h3 style="{_STYLE_H3}">{escape(stripped)}</h3>')
         else:
@@ -367,25 +522,70 @@ def text_to_html(text: str, compact: bool = False) -> str:
 
 def split_four_sections(full_text: str) -> tuple[str, str, str, str]:
     """Split AI output into 4 sections in order: Quotation, TDS, COA, MSDS.
-    Quotation: marker dropped so QUOTATION is the title. TDS/COA/MSDS: keep marker so section heading renders as big H1."""
-    def find(m: str) -> int:
-        i = full_text.find(m)
-        return i if i >= 0 else len(full_text)
-
-    i_q = find(MARKER_QUOTATION)
-    i_tds = find(MARKER_TDS)
-    i_coa = find(MARKER_COA)
-    i_msds = find(MARKER_MSDS)
-
+    Quotation: marker dropped so QUOTATION is the title. TDS/COA/MSDS: keep marker so section heading renders as big H1.
+    For multiple products, all TDS sections are combined, all COA sections combined, all MSDS sections combined."""
+    import re
+    
     def drop_marker(s: str) -> str:
         s = s.strip()
         if s.startswith("#"):
             s = s.split("\n", 1)[-1].strip() if "\n" in s else ""
         return s
-
-    quotation = drop_marker(full_text[i_q:i_tds])
-    # Keep # marker for TDS, COA, MSDS so each section has a clear big heading
-    tds = full_text[i_tds:i_coa].strip()
-    coa = full_text[i_coa:i_msds].strip()
-    msds = full_text[i_msds:].strip()
+    
+    # Find quotation section
+    q_match = re.search(r"#\s*QUOTATION\b", full_text, re.IGNORECASE)
+    q_start = q_match.start() if q_match else 0
+    
+    # Find all TDS sections (may have product name suffix like "# TECHNICAL DATA SHEET (TDS) - ProductName")
+    tds_pattern = r"#\s*TECHNICAL DATA SHEET\s*\(TDS\)(?:\s*-\s*[^\n]*)?"
+    tds_matches = list(re.finditer(tds_pattern, full_text, re.IGNORECASE))
+    
+    # Find all COA sections
+    coa_pattern = r"#\s*CERTIFICATE OF ANALYSIS\s*\(COA\)(?:\s*-\s*[^\n]*)?"
+    coa_matches = list(re.finditer(coa_pattern, full_text, re.IGNORECASE))
+    
+    # Find all MSDS sections
+    msds_pattern = r"#\s*MATERIAL SAFETY DATA SHEET\s*\(MSDS\)(?:\s*-\s*[^\n]*)?"
+    msds_matches = list(re.finditer(msds_pattern, full_text, re.IGNORECASE))
+    
+    # Get first TDS position for quotation end
+    first_tds = tds_matches[0].start() if tds_matches else len(full_text)
+    
+    # Extract quotation (from QUOTATION marker to first TDS)
+    quotation = drop_marker(full_text[q_start:first_tds])
+    
+    # Collect all document sections
+    all_sections = []
+    for m in tds_matches:
+        all_sections.append(("tds", m.start(), m.group()))
+    for m in coa_matches:
+        all_sections.append(("coa", m.start(), m.group()))
+    for m in msds_matches:
+        all_sections.append(("msds", m.start(), m.group()))
+    
+    # Sort by position
+    all_sections.sort(key=lambda x: x[1])
+    
+    # Extract content for each section
+    tds_parts = []
+    coa_parts = []
+    msds_parts = []
+    
+    for idx, (sec_type, start, marker) in enumerate(all_sections):
+        # Find end (next section start or end of text)
+        end = all_sections[idx + 1][1] if idx + 1 < len(all_sections) else len(full_text)
+        content = full_text[start:end].strip()
+        
+        if sec_type == "tds":
+            tds_parts.append(content)
+        elif sec_type == "coa":
+            coa_parts.append(content)
+        elif sec_type == "msds":
+            msds_parts.append(content)
+    
+    # Join multiple sections with page breaks
+    tds = "\n\n".join(tds_parts)
+    coa = "\n\n".join(coa_parts)
+    msds = "\n\n".join(msds_parts)
+    
     return quotation, tds, coa, msds

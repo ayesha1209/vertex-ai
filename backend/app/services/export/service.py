@@ -106,7 +106,10 @@ def _normalize_body(html: str) -> str:
         rest = (m.group(1) or "").strip()
         if "style=" in rest:
             return m.group(0)
-        return f'<table style="{_TABLE_INLINE}" {rest}>'.replace("  ", " ").strip()
+        # Preserve class attribute if present
+        if rest:
+            return f'<table {rest} style="{_TABLE_INLINE}">'.replace("  ", " ").strip()
+        return f'<table style="{_TABLE_INLINE}">'
     html = re.sub(r"<table(\s[^>]*)?>", _table_repl, html)
     return html
 

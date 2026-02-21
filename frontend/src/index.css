@@ -343,7 +343,7 @@
 }
 .vertex-editor .ProseMirror th {
   font-weight: bold;
-  background: #e5e5e5;
+  /* Don't set background here - let inline styles control it */
 }
 .vertex-editor .ProseMirror strong {
   font-weight: bold;
@@ -352,4 +352,36 @@
   border: none;
   border-top: 1px solid #333;
   margin: 0.5em 0;
+}
+
+/* Quotation tables in TipTap editor */
+.vertex-editor .ProseMirror table.items-table th {
+  background: #e0e0e0;
+  font-weight: 600;
+}
+.vertex-editor .ProseMirror table.items-table td:first-child {
+  text-align: center;
+  width: 5%;
+}
+.vertex-editor .ProseMirror table.items-table td:nth-child(2) {
+  width: 50%;
+}
+.vertex-editor .ProseMirror table.items-table td:nth-child(3),
+.vertex-editor .ProseMirror table.items-table td:nth-child(4),
+.vertex-editor .ProseMirror table.items-table td:nth-child(5) {
+  text-align: right;
+}
+.vertex-editor .ProseMirror table.totals-table tr:first-child td {
+  font-weight: 700;
+}
+.vertex-editor .ProseMirror table.customer-table td,
+.vertex-editor .ProseMirror table.delivery-table td {
+  background: #fff;
+}
+.vertex-editor .ProseMirror table.customer-table td:nth-child(1),
+.vertex-editor .ProseMirror table.customer-table td:nth-child(3),
+.vertex-editor .ProseMirror table.delivery-table td:nth-child(1),
+.vertex-editor .ProseMirror table.delivery-table td:nth-child(3) {
+  font-weight: 600;
+  background: #f9f9f9;
 }

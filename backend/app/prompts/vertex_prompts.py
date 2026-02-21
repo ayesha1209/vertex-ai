@@ -31,6 +31,11 @@ DATA & CONTENT RULES (avoid incomplete/unprofessional output)
 • Smart defaults when data is missing:
   - Quotation Date: use today's date (DD/MM/YYYY).
   - Make / Manufacturer: use Company/Supplier name if Manufacturer is empty.
+  - HSN Code: If HSN code is not provided or empty, generate the correct HSN code for the product based on the product name and type. Look up or infer the appropriate HSN code for chemicals (e.g. 28361000 for sodium carbonate, 31021000 for urea). Never use "N/A" for HSN - always provide a valid code.
+  - Port of Loading / Port of Discharge (MANDATORY for export): Generate based on supplier and buyer locations.
+    * Port of Loading: Use the major port nearest to the supplier's country/region. For India: Kandla, Mundra, JNPT (Mumbai), Chennai. For China: Shanghai, Ningbo, Shenzhen. For Europe: Rotterdam, Hamburg, Antwerp.
+    * Port of Discharge: Use the major port nearest to the buyer's country/region. Examples: UAE → Jebel Ali; Netherlands/Europe → Rotterdam; USA East → New York/Newark; USA West → Los Angeles; UK → Felixstowe; Singapore → Singapore; Australia → Melbourne/Sydney.
+    * Never use "N/A" for ports on export orders - always generate appropriate port names.
   - Bank details: use standard placeholder only if truly unknown. If supplier/bank is in India use Account Name, Bank Name, IFSC, Branch. If supplier/bank is outside India do NOT use IFSC (Indian code); use SWIFT code instead (e.g. SWIFT: XXXXXXXX).
   - Signatory: use "Authorized Signatory" or Company name; never leave blank.
   - Mfg date / Expiry / Batch: use plausible values (e.g. batch format PROD-YYMM-001, expiry 24 months from mfg).
@@ -210,7 +215,7 @@ CRITICAL:
 
 QUOTATION
 
-=== SECTION 1: MAIN CUSTOMER BLOCK (Two-Column Table: Left=Buyer Info, Right=Quotation Info) ===
+=== SECTION 1: MAIN CUSTOMER BLOCK (Four-Column Table, NO header row, all data rows) ===
 Bill To|[Buyer Name]|Quotation No|[Quotation No]
 GST No|[Buyer GST]|Quotation Date|[DD/MM/YYYY]
 Address|[Buyer Address]|Buyer Reference No|[Reference No or N/A]
@@ -219,7 +224,7 @@ Address|[Ship To Address]| |
  | | |
 ---TABLE---
 
-=== SECTION 2: DELIVERY & BANK DETAILS (Four-Column Table: Left=Delivery, Right=Bank) ===
+=== SECTION 2: DELIVERY & BANK DETAILS (Four-Column Table, NO header row, all data rows) ===
 Delivery|[e.g. 6 days after order confirmation]|Account Name|[Supplier Name]
 Transport Mode|[BY Road / Sea / Air]|Account No|[Account Number]
 Port of Loading|[Port of loading]|Bank Name|[Bank Name]
@@ -229,35 +234,40 @@ Terms of Delivery|[Incoterm e.g. FOB/CIF]| |
 Currency|[Rs. / USD]| |
 ---TABLE---
 
-=== SECTION 3: ITEM TABLE (Five Columns) ===
+=== SECTION 3: ITEM TABLE (Five Columns with header row) ===
 No.|Description of Goods|Quantity|Unit Price|Unit Amount
-1|[Product Name]<br>Make: [Manufacturer]<br>HSN: [HSN Code]|[Qty] [Unit]|[Price]|[Amount]
+1|[Product Name] // Make: [Manufacturer] // HSN: [HSN Code - generate if unknown]|[Qty] [Unit]|[Price]|[Amount]
+---TABLE---
+NOTE: Use // as separator in Description - each part will display on separate line (Product Name, then Make, then HSN).
+
+=== SECTION 4: TOTAL AMOUNT SECTION (simple rows) ===
+Total Amount|[Sum]
+Amount in Words|[Amount in words e.g. "One Thousand US Dollars Only"]
+NOTE|
 ---TABLE---
 
-=== SECTION 4: TOTAL AMOUNT SECTION ===
- | | |Total Amount|[Sum]
-Amount in Words|[Amount in words e.g. "One Thousand US Dollars Only"]| | |
-NOTE| | | |
----TABLE---
+=== SECTION 5: TERMS & CONDITIONS (after 2 blank lines, signature at bottom right) ===
+---TERMSBLOCK---
+TERMS & CONDITIONS:
+1. Prices are quoted in USD/INR as mentioned and based on Incoterms 2020.
+2. Offer validity is 3-7 days from the date of quotation.
+3. Prices are subject to change without prior notice after validity expiry.
+4. Domestic payment: 100% advance or 50% advance & balance before dispatch.
+5. Export payment: 30% advance & 70% before shipment OR Irrevocable LC at sight.
+6. All bank charges outside India are to buyer's account.
+7. Delivery period: 2-6 weeks from receipt of confirmed payment/LC.
+8. Partial shipment and transshipment allowed unless otherwise agreed.
+9. Packing: Standard export-worthy packing as specified in quotation.
+10. Third-party inspection, if required, shall be at buyer's cost.
+11. Seller's COA shall be final for quality reference.
+12. Insurance covered only for CIF shipments; otherwise buyer's responsibility.
+13. Claims must be reported within 7 days of receipt of goods.
+14. Seller not liable for delay due to Force Majeure circumstances.
+15. All disputes subject to Gujarat, India jurisdiction.
 
-=== SECTION 5: SIGNATURE & TERMS (Two-Column Table: Left=Signature, Right=Terms) ===
-Authorized Signatory| |Terms & Conditions|
-Place & Date|[Place] [Date]|1. Prices are valid for 15 days from quotation date.|
- | |2. Payment: As per agreed terms.|
- | |3. Packing: Standard export packing.|
- | |4. Delivery: Subject to availability.|
- | |5. Inspection: Buyer may inspect goods before dispatch.|
- | |6. Insurance: To be arranged by buyer unless otherwise agreed.|
- | |7. Claims: Must be lodged within 7 days of receipt.|
- | |8. Force Majeure: Not liable for delays beyond control.|
- | |9. Jurisdiction: Subject to [Place] jurisdiction.|
- | |10. Goods remain property of seller until full payment.|
- | |11. Specifications subject to change without notice.|
- | |12. Taxes: As applicable at time of delivery.|
- | |13. Cancellation: Orders cannot be cancelled once confirmed.|
- | |14. Warranty: As per manufacturer's standard warranty.|
- | |15. Disputes: To be resolved through arbitration.|
----TABLE---
+AUTHORIZED SIGNATORY:
+Place & Date: [Place], [Date]
+---TERMSBLOCK---
 """
 
     parts = [rules, quotation_ref]
@@ -278,4 +288,22 @@ SYSTEM_PROMPT = _build_system_prompt()
 
 USER_PROMPT_TEMPLATE = """Data (use if non-empty else generate with smart defaults): Company/Supplier={company_name} QuotationNo={quotation_no} Buyer={buyer_name} Product={product_name} Address={address} Country={country} Email={email_id} Contact={contact_no} Manufacturer={manufacturer_name} Desc={product_description} HSN={hsn_code} CAS={cas_no} Qty={quantity} Unit={unit} Packing={packing} Price={price} FOB/CIF={price_fob_cif} PortLoad={port_of_loading} PortUnload={port_of_unloading} Incoterm={incoterm} Payment={payment_terms} Remarks={remarks}
 Use Company/Supplier as Make and in bank/signatory when Manufacturer is empty. For export use USD and $; for domestic (India) use Rs. and INR. When Price is missing, generate a realistic unit price from the product, quantity, unit, and market (export/domestic), then calculate Amount and Total and fill Amount in Words. Always fill pricing and amount in words. Minimize N/A; omit irrelevant COA rows; keep supplier and product names consistent. Ensure: no typos; supplier location matches Country/Address; COA "15 Test Parameters" has exactly 15 rows; MSDS Section 14 transport matches Section 2 hazard; product name wording matches content (e.g. LABSA / Sulphonic Acid → acid form only, never LAS/salt properties).
-Output the 4 sections in order with markers: # QUOTATION then # TECHNICAL DATA SHEET (TDS) then # CERTIFICATE OF ANALYSIS (COA) then # MATERIAL SAFETY DATA SHEET (MSDS). QUOTATION must be ONE PAGE only: pipe tables only, compact spacing, no paragraphs. Copy each REFERENCE structure exactly; only fill [placeholders]. Use --- between subsections for horizontal rules in PDF."""
+PORTS (MANDATORY for export): If PortLoad or PortUnload is empty, generate appropriate port names based on supplier location (Port of Loading) and buyer's Country/Address (Port of Discharge). Use major international ports - never leave ports as N/A for export orders.
+MULTIPLE PRODUCTS: If Product field contains comma-separated items (e.g. "Sodium Carbonate, Urea, Calcium Chloride"):
+1. QUOTATION: Create ONE quotation with multiple line items in the items table (use // separator for line breaks):
+   No.|Description of Goods|Quantity|Unit Price|Unit Amount
+   1|[Product1] // Make: [Mfr] // HSN: [HSN1]|[Qty1] [Unit]|[Price1]|[Amount1]
+   2|[Product2] // Make: [Mfr] // HSN: [HSN2]|[Qty2] [Unit]|[Price2]|[Amount2]
+   3|[Product3] // Make: [Mfr] // HSN: [HSN3]|[Qty3] [Unit]|[Price3]|[Amount3]
+   Calculate Total Amount = sum of all amounts. Amount in Words for total.
+2. Then output SEPARATE TDS, COA, MSDS for EACH product in order:
+   # TECHNICAL DATA SHEET (TDS) - Product1
+   [full TDS for Product1]
+   # CERTIFICATE OF ANALYSIS (COA) - Product1
+   [full COA for Product1]
+   # MATERIAL SAFETY DATA SHEET (MSDS) - Product1
+   [full MSDS for Product1]
+   # TECHNICAL DATA SHEET (TDS) - Product2
+   [full TDS for Product2]
+   ... and so on for each product.
+Output order: # QUOTATION first, then TDS/COA/MSDS blocks for each product. QUOTATION must be ONE PAGE only: pipe tables only, compact spacing. Copy each REFERENCE structure exactly; only fill [placeholders]. Use --- between subsections for horizontal rules in PDF."""

@@ -155,33 +155,30 @@ export function PreviewPage() {
       )}
 
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto" role="region" aria-label="Preview table">
-          <table className="min-w-max w-full text-left text-sm">
+        <div className="overflow-x-auto max-w-full" role="region" aria-label="Preview table">
+          <table className="w-full min-w-[1200px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50/80">
               <tr>
-                <th className="w-12 shrink-0 px-3 py-3.5">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={(e) => toggleAll(e.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                      aria-label="Select all visible rows"
-                    />
-                  </label>
+                <th className="w-10 px-2 py-3 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                    aria-label="Select all visible rows"
+                  />
                 </th>
-                <th className="min-w-[120px] px-3 py-3.5 font-medium text-slate-700">Buyer</th>
-                <th className="min-w-[140px] px-3 py-3.5 font-medium text-slate-700">Product</th>
-                <th className="hidden min-w-[110px] px-3 py-3.5 font-medium text-slate-700 sm:table-cell">Date</th>
-                <th className="hidden min-w-[140px] px-3 py-3.5 font-medium text-slate-700 sm:table-cell">Company</th>
-                <th className="hidden min-w-[120px] px-3 py-3.5 font-medium text-slate-700 sm:table-cell">Quotation no</th>
-                <th className="hidden min-w-[80px] px-3 py-3.5 font-medium text-slate-700 md:table-cell">Qty</th>
-                <th className="hidden min-w-[70px] px-3 py-3.5 font-medium text-slate-700 md:table-cell">Unit</th>
-                <th className="hidden min-w-[100px] px-3 py-3.5 font-medium text-slate-700 lg:table-cell">Country</th>
-                <th className="hidden min-w-[90px] px-3 py-3.5 font-medium text-slate-700 lg:table-cell">Port</th>
-                <th className="hidden min-w-[100px] px-3 py-3.5 font-medium text-slate-700 xl:table-cell">Incoterm</th>
-                <th className="hidden min-w-[100px] px-3 py-3.5 font-medium text-slate-700 xl:table-cell">Payment</th>
-                <th className="hidden min-w-[100px] px-3 py-3.5 font-medium text-slate-700 xl:table-cell">Remarks</th>
+                <th className="w-[180px] px-3 py-3 text-xs font-semibold text-slate-700">Buyer</th>
+                <th className="w-[180px] px-3 py-3 text-xs font-semibold text-slate-700">Product</th>
+                <th className="w-[90px] px-3 py-3 text-xs font-semibold text-slate-700">Date</th>
+                <th className="w-[160px] px-3 py-3 text-xs font-semibold text-slate-700">Company</th>
+                <th className="w-[70px] px-3 py-3 text-xs font-semibold text-slate-700">Qty</th>
+                <th className="w-[60px] px-3 py-3 text-xs font-semibold text-slate-700">Unit</th>
+                <th className="w-[100px] px-3 py-3 text-xs font-semibold text-slate-700">Country</th>
+                <th className="w-[100px] px-3 py-3 text-xs font-semibold text-slate-700">Port</th>
+                <th className="w-[80px] px-3 py-3 text-xs font-semibold text-slate-700">Incoterm</th>
+                <th className="w-[100px] px-3 py-3 text-xs font-semibold text-slate-700">Payment</th>
+                <th className="w-[160px] px-3 py-3 text-xs font-semibold text-slate-700">Remarks</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -194,7 +191,7 @@ export function PreviewPage() {
                       : "hover:bg-slate-50/80 transition-colors"
                   }
                 >
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-2 text-center align-middle">
                     <input
                       type="checkbox"
                       checked={selected.has(row.id)}
@@ -203,94 +200,85 @@ export function PreviewPage() {
                       aria-label={`Select row ${idx + 1}`}
                     />
                   </td>
-                  <td className="min-w-[120px] px-3 py-2.5">
-                    <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                  <td className="px-3 py-2 align-top">
+                    <textarea
+                      className="input w-full text-xs resize-y min-h-[50px]"
                       value={row.buyer_name ?? ""}
                       onChange={(e) => handleCellChange(row.id, "buyer_name", e.target.value)}
                       title={row.buyer_name ?? ""}
                       aria-label={`Buyer row ${idx + 1}`}
                     />
                   </td>
-                  <td className="min-w-[140px] px-3 py-2.5">
-                    <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                  <td className="px-3 py-2 align-top">
+                    <textarea
+                      className="input w-full text-xs resize-y min-h-[50px]"
                       value={row.product_name ?? ""}
                       onChange={(e) => handleCellChange(row.id, "product_name", e.target.value)}
                       title={row.product_name ?? ""}
                       aria-label={`Product row ${idx + 1}`}
                     />
                   </td>
-                  <td className="hidden min-w-[110px] px-3 py-2.5 text-slate-700 sm:table-cell" aria-label={`Date row ${idx + 1}`}>
+                  <td className="px-3 py-2 text-xs text-slate-700 align-middle" aria-label={`Date row ${idx + 1}`}>
                     {row.date ?? "—"}
                   </td>
-                  <td className="hidden min-w-[140px] px-3 py-2.5 sm:table-cell">
-                    <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                  <td className="px-3 py-2 align-top">
+                    <textarea
+                      className="input w-full text-xs resize-y min-h-[50px]"
                       value={row.company_name ?? ""}
                       onChange={(e) => handleCellChange(row.id, "company_name", e.target.value)}
                       title={row.company_name ?? ""}
                       placeholder="Company"
                     />
                   </td>
-                  <td className="hidden min-w-[120px] px-3 py-2.5 sm:table-cell">
+                  <td className="px-3 py-2 align-middle">
                     <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
-                      value={row.quotation_no ?? ""}
-                      onChange={(e) => handleCellChange(row.id, "quotation_no", e.target.value)}
-                      title={row.quotation_no ?? ""}
-                      placeholder="Auto if empty"
-                    />
-                  </td>
-                  <td className="hidden min-w-[80px] px-3 py-2.5 md:table-cell">
-                    <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                      className="input w-full text-xs h-9"
                       value={(row.quantity as string) ?? ""}
                       onChange={(e) => handleCellChange(row.id, "quantity", e.target.value)}
                     />
                   </td>
-                  <td className="hidden min-w-[70px] px-3 py-2.5 md:table-cell">
+                  <td className="px-3 py-2 align-middle">
                     <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                      className="input w-full text-xs h-9"
                       value={(row.unit as string) ?? ""}
                       onChange={(e) => handleCellChange(row.id, "unit", e.target.value)}
                     />
                   </td>
-                  <td className="hidden min-w-[100px] px-3 py-2.5 lg:table-cell">
+                  <td className="px-3 py-2 align-middle">
                     <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                      className="input w-full text-xs h-9"
                       value={(row.country as string) ?? ""}
                       onChange={(e) => handleCellChange(row.id, "country", e.target.value)}
                       title={(row.country as string) ?? ""}
                     />
                   </td>
-                  <td className="hidden min-w-[90px] px-3 py-2.5 lg:table-cell">
+                  <td className="px-3 py-2 align-middle">
                     <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                      className="input w-full text-xs h-9"
                       value={(row.port as string) ?? ""}
                       onChange={(e) => handleCellChange(row.id, "port", e.target.value)}
                       title={(row.port as string) ?? ""}
                     />
                   </td>
-                  <td className="hidden min-w-[100px] px-3 py-2.5 xl:table-cell">
+                  <td className="px-3 py-2 align-middle">
                     <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                      className="input w-full text-xs h-9"
                       value={(row.incoterm as string) ?? ""}
                       onChange={(e) => handleCellChange(row.id, "incoterm", e.target.value)}
                       title={(row.incoterm as string) ?? ""}
                     />
                   </td>
-                  <td className="hidden min-w-[100px] px-3 py-2.5 xl:table-cell">
+                  <td className="px-3 py-2 align-middle">
                     <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                      className="input w-full text-xs h-9"
                       value={(row.payment_terms as string) ?? ""}
                       onChange={(e) => handleCellChange(row.id, "payment_terms", e.target.value)}
                       title={(row.payment_terms as string) ?? ""}
                     />
                   </td>
-                  <td className="hidden min-w-[100px] px-3 py-2.5 xl:table-cell">
-                    <input
-                      className="input min-h-[36px] w-full min-w-0 text-sm"
+                  <td className="px-3 py-2 align-top">
+                    <textarea
+                      className="input w-full text-xs resize-y min-h-[50px]"
                       value={(row.remarks as string) ?? ""}
                       onChange={(e) => handleCellChange(row.id, "remarks", e.target.value)}
                       title={(row.remarks as string) ?? ""}

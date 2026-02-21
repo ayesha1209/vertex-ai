@@ -1,8 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { DocumentSummary } from "../../lib/types";
 import { savePdf } from "../../lib/api";
 import { DocTypeIcon } from "../ui/DocTypeIcon";
+
+function formatTime(dateStr: string | Date): string {
+  const date = new Date(dateStr);
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
 
 function PdfIcon({ className }: { className?: string }) {
   return (
@@ -33,6 +40,17 @@ export function DocumentTable({
   const allSelected = safeDocs.length > 0 && safeDocs.every((d) => d && selectedIds.has(d.id));
   const someSelected = selectedIds.size > 0;
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const handleDownloadPdf = async (id: string) => {
+    if (downloadingId) return;
+    setDownloadingId(id);
+    try {
+      await savePdf(id);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   useEffect(() => {
     const el = selectAllRef.current;
@@ -67,13 +85,14 @@ export function DocumentTable({
                 <th className="min-w-[100px] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:min-w-[140px] sm:px-6 sm:py-4">Buyer</th>
                 <th className="min-w-[100px] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:min-w-[140px] sm:px-6 sm:py-4">Product</th>
                 <th className="hidden w-[100px] px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:table-cell">Date</th>
+                <th className="hidden w-[80px] px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:table-cell">Time</th>
                 <th className="w-[1%] whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6 sm:py-4">Actions</th>
               </tr>
             </thead>
             <tbody>
               {safeDocs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-500 sm:px-6 sm:py-16">
+                  <td colSpan={7} className="px-4 py-12 text-center text-slate-500 sm:px-6 sm:py-16">
                     No documents found.
                   </td>
                 </tr>
@@ -105,17 +124,25 @@ export function DocumentTable({
                       <td className="hidden px-6 py-4 text-slate-500 sm:table-cell">
                         {new Date(doc.created_at).toLocaleDateString()}
                       </td>
+                      <td className="hidden px-6 py-4 text-slate-500 sm:table-cell">
+                        {formatTime(doc.created_at)}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-3 sm:px-6 sm:py-4">
                         <div className="flex flex-nowrap items-center justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() => savePdf(doc.id)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-[0_1px_2px_rgb(0_0_0_/0.04)] transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
+                            onClick={() => handleDownloadPdf(doc.id)}
+                            disabled={downloadingId === doc.id}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-[0_1px_2px_rgb(0_0_0_/0.04)] transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 disabled:cursor-wait disabled:opacity-70"
                             title="PDF"
                             aria-label="PDF"
                           >
-                            <PdfIcon className="h-3.5 w-3.5 shrink-0" />
-                            <span>PDF</span>
+                            {downloadingId === doc.id ? (
+                              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                            ) : (
+                              <PdfIcon className="h-3.5 w-3.5 shrink-0" />
+                            )}
+                            <span>{downloadingId === doc.id ? "Saving…" : "PDF"}</span>
                           </button>
                           <Link
                             to={`/documents/${doc.id}`}

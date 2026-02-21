@@ -12,8 +12,19 @@ export function EditorPage() {
   const [currentHtml, setCurrentHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const handleDownloadPdf = async () => {
+    if (!doc || downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      await savePdf(doc.id);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   useEffect(() => {
     const fetchDoc = async () => {
@@ -60,7 +71,7 @@ export function EditorPage() {
       toolbar={
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-ghost" onClick={() => navigate("/documents")}>← Back</button>
-          <button type="button" className="btn-outline" disabled={!doc} onClick={() => doc && savePdf(doc.id)}>PDF</button>
+          <button type="button" className="btn-outline" disabled={!doc || downloadingPdf} onClick={handleDownloadPdf}>{downloadingPdf ? "Saving…" : "PDF"}</button>
           <button type="button" className="btn-primary" onClick={handleSave} disabled={saving || !doc}>{saving ? "Saving…" : "Save"}</button>
         </div>
       }

@@ -13,8 +13,9 @@ db = client[settings.MONGODB_DB_NAME]
 documents_collection = db["documents"]
 
 
-def now_utc() -> datetime:
-    return datetime.utcnow()
+def now_local() -> datetime:
+    """Return current local time (system timezone)."""
+    return datetime.now()
 
 
 def to_object_id(id_str: str) -> ObjectId:

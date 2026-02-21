@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from pymongo.errors import PyMongoError
 
-from app.db.mongo import documents_collection, now_utc, to_object_id
+from app.db.mongo import documents_collection, now_local, to_object_id
 from app.schemas.document import (
     BulkDeleteRequest,
     DocumentInDB,
@@ -43,7 +43,7 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
     try:
         for row in rows:
             docs_to_insert = generate_documents_for_row(row)
-            now = now_utc()
+            now = now_local()
             for doc in docs_to_insert:
                 mongo_doc = {
                     "buyer_name": doc.buyer_name,
@@ -172,7 +172,7 @@ async def generate_row(payload: GenerateRowRequest) -> GenerateRowResponse:
     row = payload.row
     docs_to_insert = generate_documents_for_row(row)
 
-    now = now_utc()
+    now = now_local()
     mongo_docs = []
     for doc in docs_to_insert:
         mongo_docs.append(
@@ -352,7 +352,7 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> Docume
         {
             "$set": {
                 "html_content": payload.html_content,
-                "updated_at": now_utc(),
+                "updated_at": now_local(),
             }
         },
         return_document=True,
@@ -381,10 +381,21 @@ async def get_pdf(doc_id: str) -> Response:
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"PDF generation failed: {e}")
 
-    buyer = doc["buyer_name"].replace(" ", "_")
-    product = doc["product_name"].replace(" ", "_")
-    doc_type = str(doc["doc_type"]).lower()
-    filename = f"{buyer}_{product}_{doc_type}.pdf"
+    from datetime import datetime
+    import re
+    
+    def sanitize_filename(s: str) -> str:
+        """Remove special chars, replace spaces with underscore, limit length."""
+        s = re.sub(r'[<>:"/\\|?*]', '', s)
+        s = s.replace(" ", "_").replace(",", "_")
+        s = re.sub(r'_+', '_', s).strip('_')
+        return s[:50]
+    
+    date_str = datetime.now().strftime("%d%m%Y")
+    buyer = sanitize_filename(doc.get("buyer_name", "") or "Document")
+    product = sanitize_filename(doc["product_name"])
+    
+    filename = f"{buyer}_{product}_{date_str}.pdf"
 
     return Response(
         content=pdf_bytes,
