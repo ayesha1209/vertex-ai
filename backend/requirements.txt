@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+openai>=1.54.0
+pydantic>=2.7.0
+python-dotenv
+pymongo[srv]
+pandas
+openpyxl
+python-multipart
+html2docx
+python-docx
+xhtml2pdf
+weasyprint

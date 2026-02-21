@@ -1,0 +1,355 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Design system — B2B SaaS (Stripe / Notion / Linear style)
+   ========================================================================== */
+@layer base {
+  :root {
+    /* Primary */
+    --color-primary: 14 116 144;
+    --color-primary-hover: 8 145 178;
+    --color-primary-muted: 204 251 241;
+    /* Surfaces */
+    --color-bg: 248 250 252;
+    --color-bg-elevated: 255 255 255;
+    --color-border: 226 232 240;
+    --color-border-focus: 20 184 166;
+    /* Typography */
+    --color-text: 30 41 59;
+    --color-text-muted: 100 116 139;
+    --color-text-subtle: 148 163 184;
+    /* Spacing scale (Tailwind-aligned) */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+    /* Radius — single scale */
+    --radius: 0.5rem;      /* 8px default */
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+    --radius-full: 9999px;
+    /* Shadows */
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.04);
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.04);
+    /* Touch target */
+    --touch: 2.75rem;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+
+  body {
+    @apply antialiased;
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-text));
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--color-border-focus));
+    outline-offset: 2px;
+  }
+
+  .skip-link {
+    @apply absolute left-4 top-4 z-[100] -translate-y-16 rounded-lg bg-slate-800 px-4 py-2.5 text-sm font-medium text-white transition-transform duration-200 focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-2;
+  }
+}
+
+@layer components {
+  /* Cards — depth via shadow, minimal/no border (premium SaaS) */
+  .card {
+    @apply rounded-2xl bg-white;
+    border-radius: 14px;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04);
+  }
+
+  .card-elevated {
+    @apply rounded-2xl bg-white;
+    border-radius: 14px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+  }
+
+  /* Buttons — consistent radius (8px), padding, font size */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-all duration-150;
+    min-height: var(--touch);
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+    border-radius: var(--radius);
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-sm {
+    min-height: 2.25rem;
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+    font-size: 0.8125rem;
+    border-radius: var(--radius);
+  }
+
+  .btn-primary {
+    @apply btn bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800;
+  }
+
+  .btn-outline {
+    @apply btn bg-white text-slate-600 shadow-[0_1px_2px_rgb(0_0_0_/0.05)] hover:bg-slate-50 hover:text-slate-800 active:bg-slate-100;
+    border: 1px solid rgb(226 232 240 / 0.8);
+  }
+
+  .btn-ghost {
+    @apply btn border-transparent bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-800;
+  }
+
+  .btn-danger {
+    @apply btn rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 active:bg-red-200;
+  }
+
+  /* Inputs — same radius, padding */
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 transition-colors;
+    min-height: var(--touch);
+    border-radius: var(--radius);
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:border-teal-500;
+  }
+
+  .input-sm {
+    min-height: 2.25rem;
+    padding: var(--space-2) var(--space-3);
+    font-size: 0.8125rem;
+    border-radius: var(--radius);
+  }
+
+  .label {
+    @apply text-sm font-medium text-slate-700;
+  }
+
+  /* Search input with icon slot */
+  .search-input-wrapper {
+    @apply relative flex items-center;
+  }
+
+  .search-input-wrapper .input {
+    padding-left: 2.25rem;
+  }
+
+  .search-input-wrapper.search-input-dashboard .input {
+    min-height: 2.5rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-radius: 10px;
+    border-color: rgb(226 232 240 / 0.9);
+    @apply bg-white transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-teal-500/40 focus-visible:ring-offset-0 focus-visible:border-slate-300;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  }
+
+  /* Pills / segment control — toolbar style, no heavy border */
+  .pill-group {
+    @apply inline-flex rounded-full bg-slate-100/90 p-1;
+    border-radius: var(--radius-full);
+  }
+
+  .pill {
+    @apply rounded-full px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors;
+    border-radius: var(--radius-full);
+  }
+
+  .pill-active {
+    @apply bg-white text-slate-900 shadow-[0_1px_2px_rgb(0_0_0_/0.06)];
+  }
+
+  /* Alerts */
+  .alert {
+    @apply rounded-lg border px-4 py-3 text-sm;
+    border-radius: var(--radius-lg);
+  }
+
+  .alert-error {
+    @apply alert border-red-200 bg-red-50 text-red-800;
+  }
+
+  .alert-warning {
+    @apply alert border-amber-200 bg-amber-50 text-amber-800;
+  }
+
+  .alert-success {
+    @apply alert border-emerald-200 bg-emerald-50 text-emerald-800;
+  }
+
+  .alert-info {
+    @apply alert border-teal-200 bg-teal-50 text-teal-800;
+  }
+
+  /* Progress bar */
+  .progress-track {
+    @apply h-2 w-full overflow-hidden rounded-full bg-slate-200;
+    border-radius: var(--radius-full);
+  }
+
+  .progress-fill {
+    @apply h-full rounded-full bg-teal-500 transition-all duration-500 ease-out;
+    border-radius: var(--radius-full);
+  }
+
+  .progress-fill-indeterminate {
+    @apply h-full rounded-full bg-teal-500;
+    border-radius: var(--radius-full);
+    width: 30%;
+    animation: progress-indeterminate 1.5s ease-in-out infinite;
+  }
+
+  @keyframes progress-indeterminate {
+    0%, 100% { width: 30%; }
+    50% { width: 70%; }
+  }
+}
+
+@layer utilities {
+  .page-container {
+    @apply mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8;
+  }
+
+  /* Dashboard: centered content, responsive padding */
+  .dashboard-container {
+    @apply mx-auto w-full max-w-5xl px-3 py-4 sm:px-5 sm:py-6 md:px-6;
+  }
+
+  .dashboard-section {
+    @apply flex flex-wrap items-center gap-3;
+  }
+
+  .dashboard-section-divider {
+    @apply h-6 w-px bg-slate-200/60 max-sm:hidden;
+  }
+
+  .page-title {
+    @apply text-2xl font-semibold tracking-tight text-slate-800 sm:text-3xl;
+  }
+
+  .page-subtitle {
+    @apply mt-1 text-sm text-slate-500 sm:text-base;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
+/* ==========================================================================
+   Document editor (TipTap) — matches export DOCX/PDF: compact, structured
+   ========================================================================== */
+.vertex-editor {
+  font-family: "Times New Roman", Georgia, "Liberation Serif", serif;
+  color: #1a1a1a;
+}
+.vertex-editor .ProseMirror {
+  min-height: 500px;
+  outline: none;
+  font-size: 11pt;
+  line-height: 1.4;
+  padding: 0.5rem 0;
+}
+.vertex-editor .ProseMirror h1 {
+  font-size: 18pt;
+  font-weight: bold;
+  margin: 0.6em 0 0.35em 0;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #1a1a1a;
+}
+.vertex-editor .ProseMirror h2 {
+  font-size: 12.5pt;
+  font-weight: bold;
+  margin: 0.5em 0 0.28em 0;
+  line-height: 1.25;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #1a1a1a;
+}
+.vertex-editor .ProseMirror h3 {
+  font-size: 11.5pt;
+  font-weight: bold;
+  margin: 0.45em 0 0.25em 0;
+  line-height: 1.25;
+  color: #1a1a1a;
+}
+.vertex-editor .ProseMirror h4,
+.vertex-editor .ProseMirror h5,
+.vertex-editor .ProseMirror h6 {
+  font-size: 11pt;
+  font-weight: bold;
+  margin: 0.4em 0 0.2em 0;
+  color: #1a1a1a;
+}
+.vertex-editor .ProseMirror p {
+  font-size: 11pt;
+  margin: 0.28em 0 0.4em 0;
+  line-height: 1.4;
+  color: #1a1a1a;
+}
+.vertex-editor .ProseMirror ul,
+.vertex-editor .ProseMirror ol {
+  font-size: 11pt;
+  margin: 0.35em 0 0.4em 0;
+  padding-left: 1.4em;
+}
+.vertex-editor .ProseMirror li {
+  margin: 0.18em 0;
+  line-height: 1.4;
+}
+.vertex-editor .ProseMirror table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 0.45em 0;
+  font-size: 10.5pt;
+}
+.vertex-editor .ProseMirror th,
+.vertex-editor .ProseMirror td {
+  border: 1px solid #333;
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.35;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.vertex-editor .ProseMirror th {
+  font-weight: bold;
+  background: #e5e5e5;
+}
+.vertex-editor .ProseMirror strong {
+  font-weight: bold;
+}
+.vertex-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 0.5em 0;
+}
