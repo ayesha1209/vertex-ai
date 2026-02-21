@@ -3,7 +3,7 @@
 import re
 from html import escape
 from app.schemas.document import DocumentCreate, DocumentType, ProductType
-from app.services.document_generation.response_parser import PAGE_BREAK, SECTION_HR, text_to_html
+from app.services.document_generation.response_parser import PAGE_BREAK, text_to_html
 
 QUOTATION_WRAPPER = '<div class="quotation-page">'
 QUOTATION_WRAPPER_END = "</div>"
@@ -89,21 +89,21 @@ def assemble_combined_document(
     tds_sections = _split_multi_product_sections(tds_text, tds_pattern)
     for tds_sec in tds_sections:
         if tds_sec.strip():
-            parts.append(PAGE_BREAK + SECTION_HR + text_to_html(tds_sec))
+            parts.append(PAGE_BREAK + text_to_html(tds_sec))
     
     # Split COA sections if multiple products
     coa_pattern = r"#\s*CERTIFICATE OF ANALYSIS\s*\(COA\)"
     coa_sections = _split_multi_product_sections(coa_text, coa_pattern)
     for coa_sec in coa_sections:
         if coa_sec.strip():
-            parts.append(PAGE_BREAK + SECTION_HR + '<div class="coa-section">' + text_to_html(coa_sec) + "</div>")
+            parts.append(PAGE_BREAK + '<div class="coa-section">' + text_to_html(coa_sec) + "</div>")
     
     # Split MSDS sections if multiple products
     msds_pattern = r"#\s*MATERIAL SAFETY DATA SHEET\s*\(MSDS\)"
     msds_sections = _split_multi_product_sections(msds_text, msds_pattern)
     for msds_sec in msds_sections:
         if msds_sec.strip():
-            parts.append(PAGE_BREAK + SECTION_HR + text_to_html(msds_sec))
+            parts.append(PAGE_BREAK + text_to_html(msds_sec))
     
     combined = "".join(parts)
     return DocumentCreate(

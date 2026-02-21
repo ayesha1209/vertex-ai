@@ -172,4 +172,19 @@ EXPORT_PRINT_CSS = """
   .items-table td:nth-child(5) {
     width: 20% !important;
   }
+  /* Terms + signature side-by-side table - no borders, keep together */
+  .terms-sig-table,
+  .terms-sig-table tr,
+  .terms-sig-table td {
+    border: none !important;
+    background: none !important;
+  }
+  .terms-sig-table {
+    page-break-inside: avoid !important;
+    -pdf-keep-with-next: false;
+  }
+  /* Keep terms section together */
+  .terms-section {
+    page-break-inside: avoid !important;
+  }
 """

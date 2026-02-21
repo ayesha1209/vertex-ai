@@ -3,8 +3,11 @@ Parse AI response into sections and convert to clean HTML for PDF/DOCX.
 We control formatting: inline styles only (PDF-engine safe), semantic tags, table headers.
 """
 
+import logging
 import re
 from html import escape
+
+logger = logging.getLogger(__name__)
 
 # Section markers in output order: Quotation → TDS → COA → MSDS
 MARKER_QUOTATION = "# QUOTATION"
@@ -41,7 +44,6 @@ _STYLE_LI = ""
 _STYLE_LI_SUB = ""
 
 PAGE_BREAK = '<div style="page-break-after:always;"></div>'
-SECTION_HR = '<hr style="border:none;border-top:1px solid #444;"/>'
 
 
 def _normalize_spacing(text: str) -> str:
@@ -256,11 +258,13 @@ def _flush_table(
 
 
 def _render_terms_block(lines: list[str], start_idx: int, html_lines: list[str]) -> int:
-    """Render the TERMS block with signature at bottom right."""
+    """Render the TERMS block with signature beside last terms (not on new page)."""
     i = start_idx + 1  # Skip ---TERMSBLOCK---
     terms_lines: list[str] = []
     signature_lines: list[str] = []
     in_signature = False
+    
+    logger.info(f">>> _render_terms_block starting at line {start_idx}")
     
     while i < len(lines):
         line = lines[i].strip()
@@ -270,29 +274,61 @@ def _render_terms_block(lines: list[str], start_idx: int, html_lines: list[str])
         if "AUTHORIZED SIGNATORY" in line.upper():
             in_signature = True
             signature_lines.append(line)
+            logger.info(f">>> Found AUTHORIZED SIGNATORY at line {i}: '{line}'")
         elif in_signature:
             if line:
                 signature_lines.append(line)
+                logger.info(f">>> Signature line: '{line}'")
         else:
             if line:
                 terms_lines.append(line)
         i += 1
     
-    # Render terms (full width)
-    html_lines.append('<div class="terms-section" style="width:100%;">')
-    for ln in terms_lines:
-        if ln.startswith("TERMS"):
-            html_lines.append(f"<p><strong>{escape(ln)}</strong></p>")
-        else:
-            html_lines.append(f"<p>{escape(ln)}</p>")
-    html_lines.append("</div>")
+    logger.info(f">>> Terms lines count: {len(terms_lines)}")
+    logger.info(f">>> Signature lines count: {len(signature_lines)}")
+    logger.info(f">>> Signature lines: {signature_lines}")
     
-    # Render signature at bottom right
-    if signature_lines:
-        html_lines.append('<div style="text-align:right;margin-top:4px;">')
-        for ln in signature_lines:
-            html_lines.append(f"<p style=\"text-align:right;margin:0;\"><strong>{escape(ln)}</strong></p>")
+    # Split terms: first part full width, last 2-3 items beside signature (moved up)
+    split_point = max(0, len(terms_lines) - 3) if signature_lines else len(terms_lines)
+    terms_upper = terms_lines[:split_point]
+    terms_lower = terms_lines[split_point:]
+    
+    logger.info(f">>> Split point: {split_point}, upper terms: {len(terms_upper)}, lower terms: {len(terms_lower)}")
+    
+    # Render upper terms (full width)
+    if terms_upper:
+        html_lines.append('<div class="terms-section" style="width:100%;">')
+        for ln in terms_upper:
+            if ln.startswith("TERMS"):
+                html_lines.append(f"<p><strong>{escape(ln)}</strong></p>")
+            else:
+                html_lines.append(f"<p>{escape(ln)}</p>")
         html_lines.append("</div>")
+    
+    # Render lower terms + signature side by side using table
+    if terms_lower or signature_lines:
+        logger.info(f">>> Rendering terms-sig-table with {len(terms_lower)} lower terms and {len(signature_lines)} signature lines")
+        html_lines.append('<table class="terms-sig-table" style="width:100%; border:none !important; border-collapse:collapse; margin-top:0; page-break-inside:avoid !important;">')
+        html_lines.append('<tr style="border:none !important; vertical-align:top;">')
+        
+        # Left column: remaining terms
+        html_lines.append('<td class="terms-section" style="width:60%; border:none !important; padding:0; vertical-align:top;">')
+        for ln in terms_lower:
+            if ln.startswith("TERMS"):
+                html_lines.append(f"<p><strong>{escape(ln)}</strong></p>")
+            else:
+                html_lines.append(f"<p>{escape(ln)}</p>")
+        html_lines.append('</td>')
+        
+        # Right column: signature (aligned to top)
+        html_lines.append('<td style="width:40%; border:none !important; padding:0 0 0 10px; text-align:right; vertical-align:top;">')
+        if signature_lines:
+            for ln in signature_lines:
+                html_lines.append(f"<p style=\"text-align:right;margin:1px 0;\"><strong>{escape(ln)}</strong></p>")
+        html_lines.append('</td>')
+        
+        html_lines.append('</tr>')
+        html_lines.append('</table>')
     
     return i
 
@@ -332,6 +368,8 @@ def text_to_html(text: str, compact: bool = False) -> str:
             in_ul = False
 
     i = 0
+    has_content = False  # Track if we've added any real content yet
+    
     while i < len(lines):
         line = lines[i].rstrip("\n")
         stripped = line.strip()
@@ -367,7 +405,13 @@ def text_to_html(text: str, compact: bool = False) -> str:
                         if ln:
                             terms_lines.append(ln)
                     i += 1
-                # Render terms first (full width)
+                
+                logger.info(f">>> Quotation terms: {len(terms_lines)} lines, signature: {len(signature_lines)} lines")
+                
+                # Wrap everything in a container to prevent page break
+                html_lines.append('<div class="terms-sig-wrapper" style="page-break-inside:avoid !important;">')
+                
+                # Render all terms (full width, consistent alignment)
                 html_lines.append('<div class="terms-section" style="width:100%;">')
                 for ln in terms_lines:
                     if ln.startswith("TERMS"):
@@ -375,12 +419,15 @@ def text_to_html(text: str, compact: bool = False) -> str:
                     else:
                         html_lines.append(f"<p>{escape(ln)}</p>")
                 html_lines.append("</div>")
-                # Render signature at bottom right (small, right-aligned)
+                
+                # Render signature at bottom right
                 if signature_lines:
-                    html_lines.append('<div style="text-align:right;margin-top:4px;">')
+                    html_lines.append('<div style="text-align:right; margin-top:8px;">')
                     for ln in signature_lines:
-                        html_lines.append(f"<p style=\"text-align:right;margin:0;\"><strong>{escape(ln)}</strong></p>")
+                        html_lines.append(f"<p style=\"text-align:right;margin:1px 0;\"><strong>{escape(ln)}</strong></p>")
                     html_lines.append("</div>")
+                
+                html_lines.append('</div>')
             else:
                 i = _render_terms_block(lines, i, html_lines)
             continue
@@ -390,11 +437,12 @@ def text_to_html(text: str, compact: bool = False) -> str:
             i += 1
             continue
 
-        # Horizontal rule
+        # Horizontal rule - skip if at the very beginning (no content yet)
         if stripped in ("---", "—", "___", "__________"):
-            close_ul()
-            close_section_block()
-            html_lines.append(f'<hr style="{_STYLE_HR}"/>')
+            if has_content:
+                close_ul()
+                close_section_block()
+                html_lines.append(f'<hr style="{_STYLE_HR}"/>')
             i += 1
             continue
 
@@ -476,23 +524,25 @@ def text_to_html(text: str, compact: bool = False) -> str:
         # Headings and paragraphs
         if stripped.startswith("# "):
             title_text = stripped[2:].strip()
-            if "TECHNICAL DATA SHEET" in title_text or "CERTIFICATE OF ANALYSIS" in title_text or "MATERIAL SAFETY DATA SHEET" in title_text:
-                html_lines.append(f'<h1 style="{_STYLE_H1}">{escape(title_text)}</h1>')
-            else:
-                html_lines.append(f'<h1 style="{_STYLE_H1}">{escape(title_text)}</h1>')
+            html_lines.append(f'<h1 style="{_STYLE_H1}">{escape(title_text)}</h1>')
+            has_content = True
         elif stripped.upper() == "QUOTATION":
             html_lines.append(f'<h1 style="{_STYLE_H1}">{escape(stripped)}</h1>')
+            has_content = True
         elif stripped.rstrip(":") in ("Supplier", "Bill To", "Ship To", "Delivery", "Declaration") or stripped.startswith("BANK DETAIL"):
             html_lines.append(f'<h2 style="{_STYLE_H2}">{escape(stripped)}</h2>')
+            has_content = True
         elif stripped.lower().rstrip(":") == "conclusion":
             close_section_block()
             if not in_coa_conclusion:
                 html_lines.append('<div class="coa-conclusion">')
                 in_coa_conclusion = True
             html_lines.append(f'<p style="{_STYLE_P_BOLD_COA_CONCLUSION}">{escape(stripped)}</p>')
+            has_content = True
         elif stripped.endswith(":") and len(stripped) < 80:
             bold_style = _STYLE_P_BOLD_COA_CONCLUSION if in_coa_conclusion else _STYLE_P_BOLD
             html_lines.append(f'<p style="{bold_style}">{escape(stripped)}</p>')
+            has_content = True
         elif (
             "Certificate of Analysis" in stripped
             or "Technical Data Sheet" in stripped
@@ -504,14 +554,17 @@ def text_to_html(text: str, compact: bool = False) -> str:
                 html_lines.append('<div class="section-block">')
                 in_section_block = True
             html_lines.append(f'<h2 style="{_STYLE_H2}">{escape(stripped)}</h2>')
+            has_content = True
         elif re.match(r"^\d+\.\s", stripped):
             close_section_block()
             html_lines.append('<div class="section-block">')
             in_section_block = True
             html_lines.append(f'<h3 style="{_STYLE_H3}">{escape(stripped)}</h3>')
+            has_content = True
         else:
             p_style = _STYLE_P_COA_CONCLUSION if in_coa_conclusion else _STYLE_P
             html_lines.append(f'<p style="{p_style}">{escape(stripped)}</p>')
+            has_content = True
         i += 1
 
     close_coa_conclusion()
