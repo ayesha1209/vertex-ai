@@ -10,7 +10,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Only ignore top-level lib (e.g. Python); frontend/src/lib must be tracked
+/lib/
 lib64/
 parts/
 sdist/
