@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -9,6 +9,10 @@ import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import { generateJSON } from "@tiptap/html";
+import { TermsSigWrapper } from "./TermsSigWrapper";
+import { recalcQuotationTotals } from "../../lib/recalcQuotationTotals";
+
+const RECALC_DEBOUNCE_MS = 500;
 
 interface Props {
   initialHtml: string | null;
@@ -16,6 +20,8 @@ interface Props {
 }
 
 export function VertexEditor({ initialHtml, onChange }: Props) {
+  const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -29,11 +35,24 @@ export function VertexEditor({ initialHtml, onChange }: Props) {
       }),
       TableRow,
       TableHeader,
-      TableCell
+      TableCell,
+      TermsSigWrapper
     ],
     content: "",
-    onUpdate({ editor }) {
-      onChange(editor.getHTML());
+    onUpdate({ editor: ed }) {
+      const html = ed.getHTML();
+      onChange(html);
+
+      if (recalcTimeoutRef.current) clearTimeout(recalcTimeoutRef.current);
+      recalcTimeoutRef.current = setTimeout(() => {
+        recalcTimeoutRef.current = null;
+        const current = ed.getHTML();
+        const updated = recalcQuotationTotals(current);
+        if (updated !== current) {
+          ed.commands.setContent(updated, false);
+          onChange(updated);
+        }
+      }, RECALC_DEBOUNCE_MS);
     }
   });
 
@@ -47,6 +66,12 @@ export function VertexEditor({ initialHtml, onChange }: Props) {
       }
     }
   }, [editor, initialHtml]);
+
+  useEffect(() => {
+    return () => {
+      if (recalcTimeoutRef.current) clearTimeout(recalcTimeoutRef.current);
+    };
+  }, []);
 
   if (!editor) return null;
 

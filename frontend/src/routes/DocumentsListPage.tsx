@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { DashboardLayout } from "../components/layout/DashboardLayout";
 import { GenerationProgressCard } from "../components/dashboard/GenerationProgressCard";
 import { SearchInput } from "../components/ui/SearchInput";
+import { ConfirmModal } from "../components/ui/ConfirmModal";
 import { BatchTable } from "../components/documents/BatchTable";
 import { DocumentPagination } from "../components/documents/DocumentPagination";
 import {
@@ -10,6 +11,7 @@ import {
   listDocuments,
   saveAllPdf,
   checkDatabaseHealth,
+  deleteBatch,
 } from "../lib/api";
 import { useActiveJob } from "../context/ActiveJobContext";
 import { useJobStream, getActiveJobId } from "../hooks/useJobStream";
@@ -47,11 +49,14 @@ export function DocumentsListPage() {
   const [dbWarning, setDbWarning] = useState<string | null>(null);
   const [dbCheckResult, setDbCheckResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
   const [dbCheckLoading, setDbCheckLoading] = useState(false);
+  const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteBatchIds, setConfirmDeleteBatchIds] = useState<string[] | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const { activeJobId, setActiveJobId } = useActiveJob();
   const jobId = activeJobId ?? getActiveJobId();
   const onJobDone = useCallback(() => setActiveJobId(null), [setActiveJobId]);
-  const jobStream = useJobStream(jobId, onJobDone);
+  const [jobStream] = useJobStream(jobId, onJobDone);
   const prevJobStatusRef = useRef<string>(jobStream.status);
 
   const fetchBatches = useCallback(async (showLoading = true) => {
@@ -112,6 +117,45 @@ export function DocumentsListPage() {
     setPage(1);
   };
 
+  const handleSelectOne = (batchId: string, checked: boolean) => {
+    setSelectedBatchIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(batchId);
+      else next.delete(batchId);
+      return next;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    setSelectedBatchIds(checked ? new Set(batches.map((b) => b.batch_id)) : new Set());
+  };
+
+  const handleDeleteBatch = (batchId: string) => setConfirmDeleteBatchIds([batchId]);
+
+  const handleBulkDeleteClick = () => {
+    if (selectedBatchIds.size > 0) setConfirmDeleteBatchIds(Array.from(selectedBatchIds));
+  };
+
+  const handleDeleteBatchConfirm = async () => {
+    const ids = confirmDeleteBatchIds;
+    if (!ids || ids.length === 0) return;
+    setDeleteLoading(true);
+    setError(null);
+    try {
+      for (const batchId of ids) {
+        await deleteBatch(batchId);
+      }
+      setBatches((prev) => prev.filter((b) => !ids.includes(b.batch_id)));
+      setTotal((t) => Math.max(0, t - ids.length));
+      setSelectedBatchIds(new Set());
+      setConfirmDeleteBatchIds(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to delete batch(es)");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const handleSaveAllPdf = async () => {
     if (total === 0) return;
     setSavingAllPdf(true);
@@ -168,6 +212,11 @@ export function DocumentsListPage() {
             </div>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => fetchBatches(true)} disabled={loading} className="btn-ghost btn-sm">{loading ? "Loading…" : "Refresh"}</button>
+              {selectedBatchIds.size > 0 && (
+                <button type="button" onClick={handleBulkDeleteClick} className="btn-danger btn-sm">
+                  Delete ({selectedBatchIds.size})
+                </button>
+              )}
               <button type="button" onClick={handleSaveAllPdf} disabled={savingAllPdf || total === 0} className="btn-primary btn-sm">{savingAllPdf ? "Saving…" : "PDF (all)"}</button>
             </div>
           </div>
@@ -228,13 +277,35 @@ export function DocumentsListPage() {
         />
       )}
 
-      <BatchTable batches={batches} loading={loading} />
+      <BatchTable
+        batches={batches}
+        selectedBatchIds={selectedBatchIds}
+        onSelectOne={handleSelectOne}
+        onSelectAll={handleSelectAll}
+        loading={loading}
+        onDelete={handleDeleteBatch}
+      />
 
       <DocumentPagination
         page={page}
         pageSize={PAGE_SIZE}
         total={total}
         onPageChange={setPage}
+      />
+
+      <ConfirmModal
+        open={confirmDeleteBatchIds !== null && confirmDeleteBatchIds.length > 0}
+        title={confirmDeleteBatchIds?.length === 1 ? "Delete batch?" : `Delete ${confirmDeleteBatchIds?.length ?? 0} batches?`}
+        message={
+          confirmDeleteBatchIds?.length === 1
+            ? "This will permanently delete all documents in this batch (Quotation, TDS, COA, MSDS). This cannot be undone."
+            : `This will permanently delete all documents in ${confirmDeleteBatchIds?.length ?? 0} batches. This cannot be undone.`
+        }
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={handleDeleteBatchConfirm}
+        onCancel={() => setConfirmDeleteBatchIds(null)}
       />
     </DashboardLayout>
   );

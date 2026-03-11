@@ -13,7 +13,7 @@ export function GeneratePage() {
   const navigate = useNavigate();
   const { setActiveJobId } = useActiveJob();
   const jobId = searchParams.get("job") || getActiveJobId();
-  const streamState = useJobStream(jobId, () => setActiveJobId(null));
+  const [streamState, { stop }] = useJobStream(jobId, () => setActiveJobId(null));
 
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -48,11 +48,18 @@ export function GeneratePage() {
           : undefined
       }
       toolbar={
-        (streamState.status === "streaming" || streamState.status === "done") && count > 0 ? (
-          <button type="button" onClick={() => navigate("/documents")} className="btn-outline">
-            Open Dashboard
-          </button>
-        ) : null
+        <div className="flex flex-wrap items-center gap-2">
+          {(streamState.status === "streaming" || streamState.status === "done") && count > 0 && (
+            <button type="button" onClick={() => navigate("/documents")} className="btn-outline">
+              Open Dashboard
+            </button>
+          )}
+          {(streamState.status === "connecting" || streamState.status === "streaming") && (
+            <button type="button" onClick={stop} className="btn-ghost text-amber-700 hover:bg-amber-50 hover:text-amber-800">
+              Stop generating
+            </button>
+          )}
+        </div>
       }
     >
       <div className="card-elevated p-6 sm:p-8">

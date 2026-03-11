@@ -89,6 +89,16 @@ export function getJobStreamUrl(jobId: string): string {
   return `/api/jobs/${jobId}/stream`;
 }
 
+/** Request backend to stop generating; in-progress row may still finish, then stream ends. */
+export async function cancelJob(jobId: string): Promise<{ job_id: string; cancelled: boolean }> {
+  const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/cancel`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string })?.detail ?? "Failed to cancel job");
+  }
+  return res.json();
+}
+
 export async function listDocuments(params?: {
   q?: string;
   buyer?: string;
@@ -140,6 +150,18 @@ export async function listBatches(params?: {
   if (params?.limit != null) usp.set("limit", String(params.limit));
   const res = await fetch(`${API_BASE_URL}/documents/batches?${usp.toString()}`);
   if (!res.ok) throw new Error("Failed to list batches");
+  return res.json();
+}
+
+export async function deleteBatch(batchId: string): Promise<{ deleted: number }> {
+  const res = await fetch(`${API_BASE_URL}/documents/batches/${encodeURIComponent(batchId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    const msg = err?.detail ?? "Failed to delete batch";
+    throw new Error(typeof msg === "string" ? msg : "Failed to delete batch");
+  }
   return res.json();
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getJobStreamUrl } from "../lib/api";
 import type { DocumentSummary } from "../lib/types";
 
@@ -40,13 +40,24 @@ export type JobStreamState =
 export function useJobStream(
   jobId: string | null,
   onDone?: () => void
-): JobStreamState {
+): [JobStreamState, { stop: () => void }] {
   const [state, setState] = useState<JobStreamState>(
     jobId ? { status: "connecting" } : { status: "done", documents: [] }
   );
   const docsRef = useRef<DocumentSummary[]>([]);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const esRef = useRef<EventSource | null>(null);
+
+  const stop = useCallback(() => {
+    if (!jobId) return;
+    import("../lib/api").then(({ cancelJob }) => cancelJob(jobId).catch(() => {}));
+    esRef.current?.close();
+    esRef.current = null;
+    setState({ status: "done", documents: docsRef.current });
+    setActiveJobId(null);
+    onDoneRef.current?.();
+  }, [jobId]);
 
   useEffect(() => {
     if (!jobId) {
@@ -58,6 +69,7 @@ export function useJobStream(
 
     const url = getJobStreamUrl(jobId);
     const es = new EventSource(url);
+    esRef.current = es;
     // Allow time for first event: document generation (AI + assembly) often takes 30–90+ seconds
     const CONNECT_TIMEOUT_MS = 120_000; // 2 minutes
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -122,8 +134,9 @@ export function useJobStream(
     return () => {
       clearConnectTimeout();
       es.close();
+      esRef.current = null;
     };
   }, [jobId]);
 
-  return state;
+  return [state, { stop }];
 }
