@@ -170,6 +170,9 @@ export function PreviewPage() {
                 </th>
                 <th className="w-[180px] px-3 py-3 text-xs font-semibold text-slate-700">Buyer</th>
                 <th className="w-[180px] px-3 py-3 text-xs font-semibold text-slate-700">Product</th>
+                <th className="w-[100px] px-3 py-3 text-xs font-semibold text-slate-700">Entered by</th>
+                <th className="w-[70px] px-3 py-3 text-xs font-semibold text-slate-700">Letterhead</th>
+                <th className="w-[80px] px-3 py-3 text-xs font-semibold text-slate-700">Local/Export</th>
                 <th className="w-[90px] px-3 py-3 text-xs font-semibold text-slate-700">Date</th>
                 <th className="w-[160px] px-3 py-3 text-xs font-semibold text-slate-700">Company</th>
                 <th className="w-[70px] px-3 py-3 text-xs font-semibold text-slate-700">Qty</th>
@@ -217,6 +220,39 @@ export function PreviewPage() {
                       title={row.product_name ?? ""}
                       aria-label={`Product row ${idx + 1}`}
                     />
+                  </td>
+                  <td className="px-3 py-2 align-middle">
+                    <input
+                      className="input w-full text-xs h-9"
+                      value={row.employee_name ?? ""}
+                      onChange={(e) => handleCellChange(row.id, "employee_name", e.target.value)}
+                      placeholder="Name"
+                      title="Person who entered this row (shown in dashboard)"
+                    />
+                  </td>
+                  <td className="px-3 py-2 align-middle">
+                    <select
+                      className="input w-full text-xs h-9"
+                      value={(row.letterhead as string) ?? ""}
+                      onChange={(e) => handleCellChange(row.id, "letterhead", e.target.value)}
+                      title="Chemical: Dubai or India address/phone"
+                    >
+                      <option value="">—</option>
+                      <option value="dubai">Dubai</option>
+                      <option value="india">India</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2 align-middle">
+                    <select
+                      className="input w-full text-xs h-9"
+                      value={(row.local_export as string) ?? ""}
+                      onChange={(e) => handleCellChange(row.id, "local_export", e.target.value)}
+                      title="Local = Rs.; Export = $"
+                    >
+                      <option value="">—</option>
+                      <option value="local">Local</option>
+                      <option value="export">Export</option>
+                    </select>
                   </td>
                   <td className="px-3 py-2 text-xs text-slate-700 align-middle" aria-label={`Date row ${idx + 1}`}>
                     {row.date ?? "—"}

@@ -3,19 +3,17 @@ import { NavLink, useLocation } from "react-router-dom";
 import { DashboardLayout } from "../components/layout/DashboardLayout";
 import { GenerationProgressCard } from "../components/dashboard/GenerationProgressCard";
 import { SearchInput } from "../components/ui/SearchInput";
-import { ConfirmModal } from "../components/ui/ConfirmModal";
-import { DocumentTable } from "../components/documents/DocumentTable";
+import { BatchTable } from "../components/documents/BatchTable";
 import { DocumentPagination } from "../components/documents/DocumentPagination";
 import {
+  listBatches,
   listDocuments,
-  deleteDocument,
-  deleteDocuments,
   saveAllPdf,
   checkDatabaseHealth,
 } from "../lib/api";
 import { useActiveJob } from "../context/ActiveJobContext";
 import { useJobStream, getActiveJobId } from "../hooks/useJobStream";
-import type { DocumentSummary } from "../lib/types";
+import type { BatchSummary } from "../lib/types";
 
 const PAGE_SIZE = 20;
 
@@ -34,7 +32,7 @@ export function DocumentsListPage() {
     [location.pathname]
   );
 
-  const [documents, setDocuments] = useState<DocumentSummary[]>([]);
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -43,16 +41,12 @@ export function DocumentsListPage() {
   const [toDate, setToDate] = useState("");
   const [appliedFromDate, setAppliedFromDate] = useState("");
   const [appliedToDate, setAppliedToDate] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [savingAllPdf, setSavingAllPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dbWarning, setDbWarning] = useState<string | null>(null);
   const [dbCheckResult, setDbCheckResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
   const [dbCheckLoading, setDbCheckLoading] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<"single" | "bulk" | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const { activeJobId, setActiveJobId } = useActiveJob();
   const jobId = activeJobId ?? getActiveJobId();
@@ -60,12 +54,12 @@ export function DocumentsListPage() {
   const jobStream = useJobStream(jobId, onJobDone);
   const prevJobStatusRef = useRef<string>(jobStream.status);
 
-  const fetchDocs = useCallback(async (showLoading = true) => {
+  const fetchBatches = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     setError(null);
     setDbWarning(null);
     try {
-      const res = await listDocuments({
+      const res = await listBatches({
         skip: (page - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         q: search || undefined,
@@ -73,7 +67,7 @@ export function DocumentsListPage() {
         from_date: appliedFromDate.trim() || undefined,
         to_date: appliedToDate.trim() || undefined,
       });
-      setDocuments(Array.isArray(res.documents) ? res.documents : []);
+      setBatches(Array.isArray(res.batches) ? res.batches : []);
       setTotal(typeof res.total === "number" ? res.total : 0);
       if (res.warning) setDbWarning(res.warning);
     } catch (e: unknown) {
@@ -89,23 +83,23 @@ export function DocumentsListPage() {
 
   useEffect(() => setPage(1), [productTypeFilter]);
   useEffect(() => {
-    fetchDocs(true);
-  }, [fetchDocs]);
+    fetchBatches(true);
+  }, [fetchBatches]);
   useEffect(() => {
     const prev = prevJobStatusRef.current;
     prevJobStatusRef.current = jobStream.status;
     if ((prev === "connecting" || prev === "streaming") && jobStream.status === "done") {
-      fetchDocs(false);
+      fetchBatches(false);
     }
-  }, [jobStream.status, fetchDocs]);
+  }, [jobStream.status, fetchBatches]);
 
-  // While generation is in progress, poll the document list so already-generated docs appear
+  // While generation is in progress, poll so new batches appear
   const isJobActive = jobId && (jobStream.status === "connecting" || jobStream.status === "streaming");
   useEffect(() => {
     if (!isJobActive) return;
-    const interval = setInterval(() => fetchDocs(false), 4000);
+    const interval = setInterval(() => fetchBatches(false), 4000);
     return () => clearInterval(interval);
-  }, [isJobActive, fetchDocs]);
+  }, [isJobActive, fetchBatches]);
 
   const handleSearch = () => {
     setSearch(searchInput.trim());
@@ -118,76 +112,14 @@ export function DocumentsListPage() {
     setPage(1);
   };
 
-  const handleSelectOne = (id: string, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    setSelectedIds(checked ? new Set(documents.map((d) => d.id)) : new Set());
-  };
-
-  const handleDeleteClick = (id: string) => {
-    setDeleteTarget("single");
-    setDeleteId(id);
-  };
-
-  const handleBulkDeleteClick = () => {
-    if (selectedIds.size > 0) {
-      setDeleteTarget("bulk");
-      setDeleteId(null);
-    }
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (deleteTarget === "single" && deleteId) {
-      setDeleteLoading(true);
-      try {
-        await deleteDocument(deleteId);
-        setDocuments((prev) => prev.filter((d) => d.id !== deleteId));
-        setTotal((t) => Math.max(0, t - 1));
-        setSelectedIds((prev) => {
-          const next = new Set(prev);
-          next.delete(deleteId);
-          return next;
-        });
-        setDeleteTarget(null);
-        setDeleteId(null);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Delete failed");
-      } finally {
-        setDeleteLoading(false);
-      }
-      return;
-    }
-    if (deleteTarget === "bulk" && selectedIds.size > 0) {
-      setDeleteLoading(true);
-      try {
-        const ids = Array.from(selectedIds);
-        const { deleted } = await deleteDocuments(ids);
-        setDocuments((prev) => prev.filter((d) => !selectedIds.has(d.id)));
-        setTotal((t) => Math.max(0, t - deleted));
-        setSelectedIds(new Set());
-        setDeleteTarget(null);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Delete failed");
-      } finally {
-        setDeleteLoading(false);
-      }
-    }
-  };
-
   const handleSaveAllPdf = async () => {
     if (total === 0) return;
     setSavingAllPdf(true);
     setError(null);
     try {
       const res = await listDocuments({ limit: 2000 });
-      await saveAllPdf(res.documents.map((d) => d.id));
+      const docs = Array.isArray(res.documents) ? res.documents : [];
+      if (docs.length > 0) await saveAllPdf(docs.map((d) => d.id));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save all PDF failed");
     } finally {
@@ -197,10 +129,10 @@ export function DocumentsListPage() {
 
   const dashboardSubtitle =
     productTypeFilter === "engineering"
-      ? "Engineering documents. Search, filter by date, save as PDF."
+      ? "Engineering batches. Click a row to open Quotation, TDS, COA, MSDS."
       : productTypeFilter === "chemical"
-        ? "Chemical documents. Search, filter by date, save as PDF."
-        : "Quotations and COA/CoC. Filter by type, search, save as PDF.";
+        ? "Chemical batches. Click a row to open Quotation, TDS, COA, MSDS."
+        : "Batches. Click a row to open documents (Quotation, TDS, COA, MSDS).";
 
   const showJobBanner = Boolean(jobId && jobStream && (jobStream.status === "connecting" || jobStream.status === "streaming"));
   const jobDocuments = (jobStream && ("documents" in jobStream) && Array.isArray(jobStream.documents)) ? jobStream.documents : [];
@@ -235,8 +167,7 @@ export function DocumentsListPage() {
               <button type="button" onClick={applyDateFilter} className="btn-outline btn-sm">Apply</button>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => fetchDocs(true)} disabled={loading} className="btn-ghost btn-sm">{loading ? "Loading…" : "Refresh"}</button>
-              {selectedIds.size > 0 && <button type="button" onClick={handleBulkDeleteClick} className="btn-danger btn-sm">Delete ({selectedIds.size})</button>}
+              <button type="button" onClick={() => fetchBatches(true)} disabled={loading} className="btn-ghost btn-sm">{loading ? "Loading…" : "Refresh"}</button>
               <button type="button" onClick={handleSaveAllPdf} disabled={savingAllPdf || total === 0} className="btn-primary btn-sm">{savingAllPdf ? "Saving…" : "PDF (all)"}</button>
             </div>
           </div>
@@ -297,38 +228,13 @@ export function DocumentsListPage() {
         />
       )}
 
-      <DocumentTable
-        documents={documents}
-        selectedIds={selectedIds}
-        onSelectOne={handleSelectOne}
-        onSelectAll={handleSelectAll}
-        onDelete={handleDeleteClick}
-        loading={loading}
-      />
+      <BatchTable batches={batches} loading={loading} />
 
       <DocumentPagination
         page={page}
         pageSize={PAGE_SIZE}
         total={total}
         onPageChange={setPage}
-      />
-
-      <ConfirmModal
-        open={deleteTarget !== null}
-        title={deleteTarget === "bulk" ? "Delete selected documents?" : "Delete document?"}
-        message={
-          deleteTarget === "bulk"
-            ? `Delete ${selectedIds.size} document(s)? This cannot be undone.`
-            : "This document will be permanently deleted. This cannot be undone."
-        }
-        confirmLabel="Delete"
-        variant="danger"
-        loading={deleteLoading}
-        onConfirm={handleDeleteConfirm}
-        onCancel={() => {
-          setDeleteTarget(null);
-          setDeleteId(null);
-        }}
       />
     </DashboardLayout>
   );

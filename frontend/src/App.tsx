@@ -7,6 +7,8 @@ import { PreviewPage } from "./routes/PreviewPage";
 import { GeneratePage } from "./routes/GeneratePage";
 import { DocumentsListPage } from "./routes/DocumentsListPage";
 import { EditorPage } from "./routes/EditorPage";
+import { BatchDetailPage } from "./routes/BatchDetailPage";
+import { TermsPage } from "./routes/TermsPage";
 
 function App() {
   return (
@@ -22,7 +24,9 @@ function App() {
               <Route path="/documents" element={<DocumentsListPage />} />
               <Route path="/documents/engineering" element={<DocumentsListPage />} />
               <Route path="/documents/chemical" element={<DocumentsListPage />} />
+              <Route path="/documents/batch/:batchId" element={<BatchDetailPage />} />
               <Route path="/documents/:id" element={<EditorPage />} />
+              <Route path="/terms" element={<TermsPage />} />
             </Routes>
           </ErrorBoundary>
         </main>

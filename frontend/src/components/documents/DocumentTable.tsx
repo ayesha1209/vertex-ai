@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { DocumentSummary } from "../../lib/types";
 import { savePdf } from "../../lib/api";
 import { DocTypeIcon } from "../ui/DocTypeIcon";
@@ -21,26 +21,37 @@ function PdfIcon({ className }: { className?: string }) {
 
 interface DocumentTableProps {
   documents: DocumentSummary[];
-  selectedIds: Set<string>;
-  onSelectOne: (id: string, checked: boolean) => void;
-  onSelectAll: (checked: boolean) => void;
-  onDelete: (id: string) => void;
+  selectedIds?: Set<string>;
+  onSelectOne?: (id: string, checked: boolean) => void;
+  onSelectAll?: (checked: boolean) => void;
+  onDelete?: (id: string) => void;
   loading?: boolean;
+  /** When false, hide the Batch link and row click navigation (e.g. on batch detail page). */
+  showBatchLink?: boolean;
 }
 
 export function DocumentTable({
   documents = [],
-  selectedIds,
+  selectedIds = new Set(),
   onSelectOne,
   onSelectAll,
   onDelete,
   loading,
+  showBatchLink = true,
 }: DocumentTableProps) {
   const safeDocs = Array.isArray(documents) ? documents : [];
   const allSelected = safeDocs.length > 0 && safeDocs.every((d) => d && selectedIds.has(d.id));
   const someSelected = selectedIds.size > 0;
   const selectAllRef = useRef<HTMLInputElement>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const hasSelection = typeof onSelectOne === "function" && typeof onSelectAll === "function" && typeof onDelete === "function";
+
+  const handleRowClick = (doc: DocumentSummary) => (e: React.MouseEvent<HTMLTableRowElement>) => {
+    if (showBatchLink && doc.batch_id && !(e.target as HTMLElement).closest("button, a, input[type='checkbox']")) {
+      navigate(`/documents/batch/${doc.batch_id}`);
+    }
+  };
 
   const handleDownloadPdf = async (id: string) => {
     if (downloadingId) return;
@@ -69,21 +80,24 @@ export function DocumentTable({
           <table className="min-w-full text-left text-sm" role="table">
             <thead>
               <tr className="bg-slate-50/70">
-                <th className="w-11 px-3 py-3 sm:px-6 sm:py-4">
-                  <label className="flex items-center">
-                    <input
-                      ref={selectAllRef}
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={(e) => onSelectAll(e.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                      aria-label="Select all documents"
-                    />
-                  </label>
-                </th>
+                {hasSelection && (
+                  <th className="w-11 px-3 py-3 sm:px-6 sm:py-4">
+                    <label className="flex items-center">
+                      <input
+                        ref={selectAllRef}
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={(e) => onSelectAll?.(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        aria-label="Select all documents"
+                      />
+                    </label>
+                  </th>
+                )}
                 <th className="w-[100px] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6 sm:py-4">Type</th>
                 <th className="min-w-[100px] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:min-w-[140px] sm:px-6 sm:py-4">Buyer</th>
                 <th className="min-w-[100px] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:min-w-[140px] sm:px-6 sm:py-4">Product</th>
+                <th className="w-[120px] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6 sm:py-4">Entered by</th>
                 <th className="hidden w-[100px] px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:table-cell">Date</th>
                 <th className="hidden w-[80px] px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:table-cell">Time</th>
                 <th className="w-[1%] whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6 sm:py-4">Actions</th>
@@ -92,27 +106,35 @@ export function DocumentTable({
             <tbody>
               {safeDocs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-slate-500 sm:px-6 sm:py-16">
+                  <td colSpan={hasSelection ? 8 : 7} className="px-4 py-12 text-center text-slate-500 sm:px-6 sm:py-16">
                     No documents found.
                   </td>
                 </tr>
               ) : (
                 safeDocs.map((doc) => {
                   if (!doc || !doc.id) return null;
+                  const rowClickable = showBatchLink && doc.batch_id;
                   return (
                     <tr
                       key={doc.id}
-                      className="group transition-all duration-150 hover:bg-slate-50/80 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-slate-100"
+                      role={rowClickable ? "button" : undefined}
+                      tabIndex={rowClickable ? 0 : undefined}
+                      onClick={rowClickable ? handleRowClick(doc) : undefined}
+                      onKeyDown={rowClickable ? (e) => e.key === "Enter" && navigate(`/documents/batch/${doc.batch_id}`) : undefined}
+                      className={`group transition-all duration-150 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-slate-100 ${rowClickable ? "cursor-pointer hover:bg-slate-50/80 focus:bg-slate-50/70" : "hover:bg-slate-50/80"}`}
+                      aria-label={rowClickable ? `View all documents for ${doc.buyer_name} ${doc.product_name}` : undefined}
                     >
-                      <td className="px-3 py-3 sm:px-6 sm:py-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(doc.id)}
-                          onChange={(e) => onSelectOne(doc.id, e.target.checked)}
-                          className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                          aria-label={`Select ${doc.buyer_name} ${doc.product_name}`}
-                        />
-                      </td>
+                      {hasSelection && (
+                        <td className="px-3 py-3 sm:px-6 sm:py-4" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(doc.id)}
+                            onChange={(e) => onSelectOne?.(doc.id, e.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            aria-label={`Select ${doc.buyer_name} ${doc.product_name}`}
+                          />
+                        </td>
+                      )}
                       <td className="px-3 py-3 sm:px-6 sm:py-4">
                         <div className="flex items-center gap-2.5">
                           <DocTypeIcon type={doc.doc_type} className="h-7 w-7" />
@@ -121,13 +143,14 @@ export function DocumentTable({
                       </td>
                       <td className="px-3 py-3 font-medium text-slate-800 sm:px-6 sm:py-4">{doc.buyer_name}</td>
                       <td className="px-3 py-3 text-slate-700 sm:px-6 sm:py-4">{doc.product_name}</td>
+                      <td className="px-3 py-3 text-slate-600 sm:px-6 sm:py-4">{doc.employee_name ?? "—"}</td>
                       <td className="hidden px-6 py-4 text-slate-500 sm:table-cell">
                         {new Date(doc.created_at).toLocaleDateString()}
                       </td>
                       <td className="hidden px-6 py-4 text-slate-500 sm:table-cell">
                         {formatTime(doc.created_at)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-3 sm:px-6 sm:py-4">
+                      <td className="whitespace-nowrap px-3 py-3 sm:px-6 sm:py-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-nowrap items-center justify-end gap-1.5">
                           <button
                             type="button"
@@ -144,19 +167,29 @@ export function DocumentTable({
                             )}
                             <span>{downloadingId === doc.id ? "Saving…" : "PDF"}</span>
                           </button>
+                          {showBatchLink && doc.batch_id && (
+                            <Link
+                              to={`/documents/batch/${doc.batch_id}`}
+                              className="inline-flex items-center rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-[0_1px_2px_rgb(0_0_0_/0.04)] transition-colors hover:bg-slate-50 hover:text-slate-800"
+                            >
+                              Batch
+                            </Link>
+                          )}
                           <Link
                             to={`/documents/${doc.id}`}
                             className="inline-flex items-center rounded-lg bg-teal-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-teal-700 focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
                           >
                             Edit
                           </Link>
-                          <button
-                            type="button"
-                            onClick={() => onDelete(doc.id)}
-                            className="rounded-lg px-2.5 py-2 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1"
-                          >
-                            Delete
-                          </button>
+                          {onDelete && (
+                            <button
+                              type="button"
+                              onClick={() => onDelete(doc.id)}
+                              className="rounded-lg px-2.5 py-2 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1"
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

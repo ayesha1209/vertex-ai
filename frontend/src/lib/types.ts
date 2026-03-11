@@ -20,6 +20,7 @@ export interface RowPreview {
   quotation_no?: string | null;
   buyer_enquir_ref_no?: string | null;
   address?: string | null;
+  letterhead?: string | null;
   local_export?: string | null;
   transportation?: string | null;
   type_of_packing?: string | null;
@@ -49,10 +50,32 @@ export interface DocumentSummary {
   doc_type: DocumentType;
   created_at: string;
   updated_at: string;
+  employee_name?: string | null;
+  batch_id?: string | null;
+}
+
+export interface TermsResponse {
+  chemical: string;
+  engineering: string;
 }
 
 export interface ListDocumentsResponse {
   documents: DocumentSummary[];
+  total: number;
+  warning?: string;
+}
+
+export interface BatchSummary {
+  batch_id: string;
+  buyer_name: string;
+  product_name: string;
+  product_type: ProductType;
+  employee_name?: string | null;
+  created_at: string;
+}
+
+export interface ListBatchesResponse {
+  batches: BatchSummary[];
   total: number;
   warning?: string;
 }

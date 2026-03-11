@@ -2,8 +2,10 @@ import type {
   DocumentInDB,
   DocumentSummary,
   GenerateRowResponse,
+  ListBatchesResponse,
   ListDocumentsResponse,
   RowPreview,
+  TermsResponse,
   UploadPreviewResponse
 } from "./types";
 
@@ -62,6 +64,22 @@ export async function checkDatabaseHealth(): Promise<{ ok: boolean; message?: st
   return data;
 }
 
+export async function getTerms(): Promise<TermsResponse> {
+  const res = await fetch(`${API_BASE_URL}/terms`);
+  if (!res.ok) throw new Error("Failed to load terms");
+  return res.json();
+}
+
+export async function updateTerms(payload: { chemical?: string; engineering?: string }): Promise<TermsResponse> {
+  const res = await fetch(`${API_BASE_URL}/terms`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to update terms");
+  return res.json();
+}
+
 export function getJobStreamUrl(jobId: string): string {
   const base = import.meta.env.VITE_API_BASE_URL;
   if (base) {
@@ -77,6 +95,7 @@ export async function listDocuments(params?: {
   product?: string;
   doc_type?: string;
   product_type?: "chemical" | "engineering";
+  batch_id?: string;
   from_date?: string;
   to_date?: string;
   skip?: number;
@@ -88,6 +107,7 @@ export async function listDocuments(params?: {
   if (params?.product) usp.set("product", params.product);
   if (params?.doc_type) usp.set("doc_type", params.doc_type);
   if (params?.product_type) usp.set("product_type", params.product_type);
+  if (params?.batch_id) usp.set("batch_id", params.batch_id);
   if (params?.from_date) usp.set("from_date", params.from_date);
   if (params?.to_date) usp.set("to_date", params.to_date);
   if (params?.skip != null) usp.set("skip", String(params.skip));
@@ -100,6 +120,26 @@ export async function listDocuments(params?: {
     const msg = typeof d === "string" ? d : Array.isArray(d) ? d[0]?.msg : null;
     throw new Error(msg || "Failed to list documents");
   }
+  return res.json();
+}
+
+export async function listBatches(params?: {
+  q?: string;
+  product_type?: "chemical" | "engineering";
+  from_date?: string;
+  to_date?: string;
+  skip?: number;
+  limit?: number;
+}): Promise<ListBatchesResponse> {
+  const usp = new URLSearchParams();
+  if (params?.q?.trim()) usp.set("q", params.q.trim());
+  if (params?.product_type) usp.set("product_type", params.product_type);
+  if (params?.from_date) usp.set("from_date", params.from_date);
+  if (params?.to_date) usp.set("to_date", params.to_date);
+  if (params?.skip != null) usp.set("skip", String(params.skip));
+  if (params?.limit != null) usp.set("limit", String(params.limit));
+  const res = await fetch(`${API_BASE_URL}/documents/batches?${usp.toString()}`);
+  if (!res.ok) throw new Error("Failed to list batches");
   return res.json();
 }
 
