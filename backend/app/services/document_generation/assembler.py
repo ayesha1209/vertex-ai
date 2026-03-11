@@ -1,4 +1,4 @@
-"""Assemble parsed sections into one combined HTML document."""
+"""Assemble parsed sections into separate Quotation, TDS, COA, and MSDS documents."""
 
 import re
 from html import escape
@@ -63,7 +63,26 @@ def _split_multi_product_sections(text: str, pattern: str) -> list[str]:
     return sections
 
 
-def assemble_combined_document(
+def _ensure_currency_in_totals(html: str, local_export: str | None) -> str:
+    """Ensure Total/Amount column header and total row use ₹ (rupee) for LOCAL and $ for EXPORT."""
+    if not local_export:
+        return html
+    is_local = str(local_export).strip().lower() == "local"
+    # Post-process: in totals table and items header, align currency symbol
+    if is_local:
+        # Replace $ with ₹ (rupee symbol) in header/total context
+        html = re.sub(r"Amount\s*\(\s*\$\s*\)", "Amount (₹)", html, flags=re.IGNORECASE)
+        html = re.sub(r"Amount\s*\(\s*Rs\.?\s*\)", "Amount (₹)", html, flags=re.IGNORECASE)
+        # In totals table row, replace leading $ or Rs. with ₹
+        html = re.sub(r"(totals-table[^>]*>.*?<td[^>]*>\s*)\$", r"\1₹", html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r"(totals-table[^>]*>.*?<td[^>]*>\s*)Rs\.?", r"\1₹", html, flags=re.DOTALL | re.IGNORECASE)
+    else:
+        html = re.sub(r"Amount\s*\(\s*Rs\.?\s*\)", "Amount ($)", html, flags=re.IGNORECASE)
+        html = re.sub(r"Amount\s*\(\s*₹\s*\)", "Amount ($)", html, flags=re.IGNORECASE)
+    return html
+
+
+def assemble_separate_documents(
     quotation_text: str,
     tds_text: str,
     coa_text: str,
@@ -71,45 +90,89 @@ def assemble_combined_document(
     buyer_name: str,
     product_name: str,
     product_type: ProductType,
-) -> DocumentCreate:
-    """Combine sections with page breaks. Handles multiple products:
-    - One quotation with all items
-    - Separate TDS/COA/MSDS for each product, each on new page
-    """
-    # Quotation (single, with all line items)
-    q = text_to_html(quotation_text, compact=True)
-    # Post-process to ensure line breaks in item descriptions
-    q = _fix_description_line_breaks(q)
-    q = QUOTATION_WRAPPER + q + QUOTATION_WRAPPER_END
-    
-    parts = [q]
-    
-    # Split TDS sections if multiple products
+    *,
+    batch_id: str,
+    employee_name: str | None = None,
+    letterhead: str | None = None,
+    quotation_no: str | None = None,
+    company_name: str | None = None,
+    local_export: str | None = None,
+    terms_html: str | None = None,
+) -> list[DocumentCreate]:
+    """Build four separate documents: Quotation, TDS, COA, MSDS. Each gets batch_id and optional terms appended."""
+    terms_block = ("<div class=\"terms-and-conditions\">" + terms_html + "</div>") if terms_html else ""
+
+    def wrap_section(section_html: str, terms: str) -> str:
+        if terms:
+            return section_html + PAGE_BREAK + terms
+        return section_html
+
+    # Quotation (single)
+    q_html = text_to_html(quotation_text, compact=True)
+    q_html = _fix_description_line_breaks(q_html)
+    q_html = QUOTATION_WRAPPER + q_html + QUOTATION_WRAPPER_END
+    q_html = _ensure_currency_in_totals(q_html, local_export)
+    q_html = wrap_section(q_html, terms_block)
+
+    # TDS (all sections with page breaks)
+    tds_parts: list[str] = []
     tds_pattern = r"#\s*TECHNICAL DATA SHEET\s*\(TDS\)"
     tds_sections = _split_multi_product_sections(tds_text, tds_pattern)
     for tds_sec in tds_sections:
         if tds_sec.strip():
-            parts.append(PAGE_BREAK + text_to_html(tds_sec))
-    
-    # Split COA sections if multiple products
+            tds_parts.append(text_to_html(tds_sec))
+    tds_html = (PAGE_BREAK.join(tds_parts) + PAGE_BREAK + terms_block) if terms_block else PAGE_BREAK.join(tds_parts)
+
+    # COA
+    coa_parts = []
     coa_pattern = r"#\s*CERTIFICATE OF ANALYSIS\s*\(COA\)"
     coa_sections = _split_multi_product_sections(coa_text, coa_pattern)
     for coa_sec in coa_sections:
         if coa_sec.strip():
-            parts.append(PAGE_BREAK + '<div class="coa-section">' + text_to_html(coa_sec) + "</div>")
-    
-    # Split MSDS sections if multiple products
+            coa_parts.append('<div class="coa-section">' + text_to_html(coa_sec) + "</div>")
+    coa_html = (PAGE_BREAK.join(coa_parts) + PAGE_BREAK + terms_block) if terms_block else PAGE_BREAK.join(coa_parts)
+
+    # MSDS
+    msds_parts = []
     msds_pattern = r"#\s*MATERIAL SAFETY DATA SHEET\s*\(MSDS\)"
     msds_sections = _split_multi_product_sections(msds_text, msds_pattern)
     for msds_sec in msds_sections:
         if msds_sec.strip():
-            parts.append(PAGE_BREAK + text_to_html(msds_sec))
-    
-    combined = "".join(parts)
-    return DocumentCreate(
-        buyer_name=buyer_name,
-        product_name=product_name,
-        product_type=product_type,
-        doc_type=DocumentType.combined,
-        html_content=combined,
-    )
+            msds_parts.append(text_to_html(msds_sec))
+    msds_html = (PAGE_BREAK.join(msds_parts) + PAGE_BREAK + terms_block) if terms_block else PAGE_BREAK.join(msds_parts)
+
+    letterhead_val = letterhead.strip().lower() if (letterhead and isinstance(letterhead, str)) else None
+    local_export_val = local_export.strip().lower() if (local_export and isinstance(local_export, str)) else None
+    common = {
+        "buyer_name": buyer_name,
+        "product_name": product_name,
+        "product_type": product_type,
+        "batch_id": batch_id,
+        "employee_name": employee_name,
+        "letterhead": letterhead_val if letterhead_val in ("dubai", "india") else None,
+        "local_export": local_export_val,
+    }
+    return [
+        DocumentCreate(
+            **common,
+            doc_type=DocumentType.quotation,
+            html_content=q_html,
+            quotation_no=quotation_no,
+            company_name=company_name,
+        ),
+        DocumentCreate(
+            **common,
+            doc_type=DocumentType.tds,
+            html_content=tds_html if tds_parts else "<p>No TDS content.</p>",
+        ),
+        DocumentCreate(
+            **common,
+            doc_type=DocumentType.coa,
+            html_content=coa_html if coa_parts else "<p>No COA content.</p>",
+        ),
+        DocumentCreate(
+            **common,
+            doc_type=DocumentType.msds,
+            html_content=msds_html if msds_parts else "<p>No MSDS content.</p>",
+        ),
+    ]

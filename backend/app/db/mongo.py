@@ -11,6 +11,9 @@ settings = get_settings()
 client = MongoClient(settings.MONGODB_URI)
 db = client[settings.MONGODB_DB_NAME]
 documents_collection = db["documents"]
+terms_collection = db["terms_and_conditions"]
+# Single document id for terms (chemical + engineering HTML)
+TERMS_DOC_ID = "default"
 
 
 def now_local() -> datetime:

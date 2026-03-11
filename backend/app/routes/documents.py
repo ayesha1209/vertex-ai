@@ -10,8 +10,9 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from pymongo.errors import PyMongoError
 
-from app.db.mongo import documents_collection, now_local, to_object_id
+from app.db.mongo import TERMS_DOC_ID, documents_collection, now_local, terms_collection, to_object_id
 from app.schemas.document import (
+    BatchSummary,
     BulkDeleteRequest,
     DocumentInDB,
     DocumentSummary,
@@ -19,11 +20,15 @@ from app.schemas.document import (
     GenerateBatchResponse,
     GenerateRowRequest,
     GenerateRowResponse,
+    ListBatchesResponse,
     ListDocumentsResponse,
     RowPreview,
+    TermsResponse,
+    TermsUpdateRequest,
     UploadPreviewResponse,
     UpdateDocumentRequest,
 )
+from app.prompts.vertex_prompts import DEFAULT_TERMS
 from app.services.document_generation import generate_documents_for_row
 from app.services.export import html_to_pdf
 from app.utils.excel_parser import parse_excel_to_previews
@@ -53,6 +58,12 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                     "html_content": doc.html_content,
                     "created_at": now,
                     "updated_at": now,
+                    "employee_name": getattr(doc, "employee_name", None),
+                    "letterhead": getattr(doc, "letterhead", None),
+                    "batch_id": getattr(doc, "batch_id", None),
+                    "quotation_no": getattr(doc, "quotation_no", None),
+                    "company_name": getattr(doc, "company_name", None),
+                    "local_export": getattr(doc, "local_export", None),
                 }
                 result = documents_collection.insert_one(mongo_doc)
                 inserted = documents_collection.find_one({"_id": result.inserted_id})
@@ -65,6 +76,8 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                         doc_type=inserted["doc_type"],
                         created_at=inserted["created_at"],
                         updated_at=inserted["updated_at"],
+                        employee_name=inserted.get("employee_name"),
+                        batch_id=inserted.get("batch_id"),
                     )
                     try:
                         q.put_nowait(summary.model_dump(mode="json"))
@@ -93,6 +106,12 @@ def _serialize_mongo_doc(doc: Any) -> DocumentInDB:
         html_content=doc["html_content"],
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
+        employee_name=doc.get("employee_name"),
+        letterhead=doc.get("letterhead"),
+        batch_id=doc.get("batch_id"),
+        quotation_no=doc.get("quotation_no"),
+        company_name=doc.get("company_name"),
+        local_export=doc.get("local_export"),
     )
 
 
@@ -184,6 +203,12 @@ async def generate_row(payload: GenerateRowRequest) -> GenerateRowResponse:
                 "html_content": doc.html_content,
                 "created_at": now,
                 "updated_at": now,
+                "employee_name": getattr(doc, "employee_name", None),
+                "letterhead": getattr(doc, "letterhead", None),
+                "batch_id": getattr(doc, "batch_id", None),
+                "quotation_no": getattr(doc, "quotation_no", None),
+                "company_name": getattr(doc, "company_name", None),
+                "local_export": getattr(doc, "local_export", None),
             }
         )
 
@@ -217,13 +242,14 @@ async def list_documents(
     product: str | None = None,
     doc_type: str | None = None,
     product_type: str | None = None,
+    batch_id: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> ListDocumentsResponse:
     """List documents with optional filters and pagination. Use 'q' to search buyer or product.
-    product_type: 'chemical' | 'engineering'. from_date/to_date: ISO date (YYYY-MM-DD)."""
+    product_type: 'chemical' | 'engineering'. batch_id: list all docs in a batch. from_date/to_date: ISO date (YYYY-MM-DD)."""
     query: dict[str, Any] = {}
     if q and q.strip():
         q_regex = {"$regex": q.strip(), "$options": "i"}
@@ -240,6 +266,8 @@ async def list_documents(
         query["doc_type"] = doc_type
     if product_type and product_type in ("chemical", "engineering"):
         query["product_type"] = product_type
+    if batch_id and batch_id.strip():
+        query["batch_id"] = batch_id.strip()
     if from_date or to_date:
         date_filter: dict[str, Any] = {}
         if from_date:
@@ -276,6 +304,8 @@ async def list_documents(
                     doc_type=d["doc_type"],
                     created_at=d["created_at"],
                     updated_at=d["updated_at"],
+                    employee_name=d.get("employee_name"),
+                    batch_id=d.get("batch_id"),
                 )
             )
         return ListDocumentsResponse(documents=summaries, total=total)
@@ -291,6 +321,90 @@ async def list_documents(
     except Exception as e:
         return ListDocumentsResponse(
             documents=[],
+            total=0,
+            warning=f"Database error: {str(e)[:150]}",
+        )
+
+
+@router.get("/documents/batches", response_model=ListBatchesResponse)
+async def list_batches(
+    q: str | None = None,
+    product_type: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> ListBatchesResponse:
+    """List one row per batch for dashboard. Only documents with batch_id are grouped."""
+    match_query: dict[str, Any] = {"batch_id": {"$exists": True, "$nin": [None, ""]}}
+    if product_type and product_type in ("chemical", "engineering"):
+        match_query["product_type"] = product_type
+    if from_date or to_date:
+        date_filter: dict[str, Any] = {}
+        if from_date:
+            try:
+                start = dt.fromisoformat(from_date.strip() + "T00:00:00+00:00")
+                date_filter["$gte"] = start
+            except ValueError:
+                pass
+        if to_date:
+            try:
+                end = dt.fromisoformat(to_date.strip() + "T23:59:59.999999+00:00")
+                date_filter["$lte"] = end
+            except ValueError:
+                pass
+        if date_filter:
+            match_query["created_at"] = date_filter
+    if q and q.strip():
+        q_regex = {"$regex": q.strip(), "$options": "i"}
+        match_query = {"$and": [match_query, {"$or": [{"buyer_name": q_regex}, {"product_name": q_regex}]}]}
+
+    pipeline_count: List[dict[str, Any]] = [
+        {"$match": match_query},
+        {"$group": {"_id": "$batch_id"}},
+        {"$count": "total"},
+    ]
+    pipeline_list: List[dict[str, Any]] = [
+        {"$match": match_query},
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": "$batch_id",
+            "buyer_name": {"$first": "$buyer_name"},
+            "product_name": {"$first": "$product_name"},
+            "product_type": {"$first": "$product_type"},
+            "employee_name": {"$first": "$employee_name"},
+            "created_at": {"$first": "$created_at"},
+        }},
+        {"$sort": {"created_at": -1}},
+        {"$skip": skip},
+        {"$limit": min(limit, 100)},
+    ]
+    try:
+        total_result = list(documents_collection.aggregate(pipeline_count))
+        total = total_result[0]["total"] if total_result else 0
+        cursor = documents_collection.aggregate(pipeline_list)
+        batches: List[BatchSummary] = []
+        for d in cursor:
+            batches.append(
+                BatchSummary(
+                    batch_id=str(d["_id"]),
+                    buyer_name=d.get("buyer_name") or "",
+                    product_name=d.get("product_name") or "",
+                    product_type=d.get("product_type") or "chemical",
+                    employee_name=d.get("employee_name"),
+                    created_at=d.get("created_at") or dt.now(),
+                )
+            )
+        return ListBatchesResponse(batches=batches, total=total)
+    except PyMongoError:
+        return ListBatchesResponse(
+            batches=[],
+            total=0,
+            warning="Database unavailable. Check MongoDB connection.",
+        )
+    except Exception as e:
+        return ListBatchesResponse(
+            batches=[],
             total=0,
             warning=f"Database error: {str(e)[:150]}",
         )
@@ -339,6 +453,47 @@ async def get_document(doc_id: str) -> DocumentInDB:
     return _serialize_mongo_doc(doc)
 
 
+@router.get("/terms", response_model=TermsResponse)
+async def get_terms() -> TermsResponse:
+    """Get editable Terms and Conditions for Chemical and Engineering. When DB has none, returns default from prompt."""
+    try:
+        doc = terms_collection.find_one({"_id": TERMS_DOC_ID})
+    except Exception:
+        return TermsResponse(chemical=DEFAULT_TERMS, engineering=DEFAULT_TERMS)
+    if not doc:
+        return TermsResponse(chemical=DEFAULT_TERMS, engineering=DEFAULT_TERMS)
+    chemical = (doc.get("chemical") or "").strip()
+    engineering = (doc.get("engineering") or "").strip()
+    return TermsResponse(
+        chemical=chemical or DEFAULT_TERMS,
+        engineering=engineering or DEFAULT_TERMS,
+    )
+
+
+@router.put("/terms", response_model=TermsResponse)
+async def update_terms(payload: TermsUpdateRequest) -> TermsResponse:
+    """Update Terms and Conditions. Changes apply to all newly generated documents."""
+    try:
+        doc = terms_collection.find_one({"_id": TERMS_DOC_ID}) or {"chemical": "", "engineering": ""}
+        if not isinstance(doc, dict):
+            doc = {"chemical": "", "engineering": ""}
+        updates = {}
+        if payload.chemical is not None:
+            updates["chemical"] = payload.chemical.strip()
+        if payload.engineering is not None:
+            updates["engineering"] = payload.engineering.strip()
+        doc = {**doc, **updates, "_id": TERMS_DOC_ID}
+        doc.setdefault("chemical", "")
+        doc.setdefault("engineering", "")
+        terms_collection.replace_one({"_id": TERMS_DOC_ID}, doc, upsert=True)
+        return TermsResponse(
+            chemical=doc.get("chemical", ""),
+            engineering=doc.get("engineering", ""),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+
+
 @router.put("/documents/{doc_id}", response_model=DocumentInDB)
 async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> DocumentInDB:
     oid: ObjectId
@@ -362,9 +517,21 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> Docume
     return _serialize_mongo_doc(res)
 
 
+def _sanitize_filename(s: str, max_len: int = 80) -> str:
+    """Remove special chars, replace spaces with underscore."""
+    import re
+    s = re.sub(r'[<>:"/\\|?*]', '', str(s or ""))
+    s = s.replace(" ", "_").replace(",", "_")
+    s = re.sub(r'_+', '_', s).strip('_')
+    return s[:max_len]
+
+
 @router.get("/documents/{doc_id}/pdf")
 async def get_pdf(doc_id: str) -> Response:
-    """Return document as PDF file."""
+    """Return document as PDF file. Filename by doc_type: QF_* for quotation, TDS_*, COA_*, MSDS_*."""
+    import re
+    from datetime import datetime
+
     oid: ObjectId
     try:
         oid = to_object_id(doc_id)
@@ -376,26 +543,29 @@ async def get_pdf(doc_id: str) -> Response:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     html = doc["html_content"]
+    letterhead = doc.get("letterhead")
     try:
-        pdf_bytes = html_to_pdf(html)
+        pdf_bytes = html_to_pdf(html, letterhead=letterhead)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"PDF generation failed: {e}")
 
-    from datetime import datetime
-    import re
-    
-    def sanitize_filename(s: str) -> str:
-        """Remove special chars, replace spaces with underscore, limit length."""
-        s = re.sub(r'[<>:"/\\|?*]', '', s)
-        s = s.replace(" ", "_").replace(",", "_")
-        s = re.sub(r'_+', '_', s).strip('_')
-        return s[:50]
-    
-    date_str = datetime.now().strftime("%d%m%Y")
-    buyer = sanitize_filename(doc.get("buyer_name", "") or "Document")
-    product = sanitize_filename(doc["product_name"])
-    
-    filename = f"{buyer}_{product}_{date_str}.pdf"
+    buyer = _sanitize_filename(doc.get("buyer_name", "") or "Document")
+    product = _sanitize_filename(doc.get("product_name", "") or "Document")
+    doc_type = doc.get("doc_type", "document")
+
+    if doc_type == "quotation":
+        qno = _sanitize_filename(doc.get("quotation_no") or "Q", 30)
+        company = _sanitize_filename(doc.get("company_name") or "Company", 30)
+        filename = f"QF_{qno}_{company}_{buyer}_{product}.pdf"
+    elif doc_type == "tds":
+        filename = f"TDS_{product}.pdf"
+    elif doc_type == "coa":
+        filename = f"COA_{product}.pdf"
+    elif doc_type == "msds":
+        filename = f"MSDS_{product}.pdf"
+    else:
+        date_str = datetime.now().strftime("%d%m%Y")
+        filename = f"{buyer}_{product}_{date_str}.pdf"
 
     return Response(
         content=pdf_bytes,

@@ -1,9 +1,11 @@
 """Orchestrate document generation: prompt → OpenAI → parse → assemble."""
 
+import uuid
+
 from app.prompts.vertex_prompts import SYSTEM_PROMPT
 from app.schemas.document import DocumentCreate, RowPreview
 
-from app.services.document_generation.assembler import assemble_combined_document
+from app.services.document_generation.assembler import assemble_separate_documents
 from app.services.document_generation.openai_client import complete
 from app.services.document_generation.product_type import detect_product_type
 from app.services.document_generation.prompt_builder import build_user_prompt
@@ -11,10 +13,11 @@ from app.services.document_generation.response_parser import (
     MARKER_COA,
     split_four_sections,
 )
+from app.services.terms_service import get_terms
 
 
 def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
-    """Generate one combined document: Quotation → TDS → COA → MSDS (exact format from reference)."""
+    """Generate four separate documents: Quotation, TDS, COA, MSDS (each with batch_id and terms)."""
     product_type = detect_product_type(row.product_name)
     user_prompt = build_user_prompt(row)
 
@@ -36,8 +39,22 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
             quotation_text = full_text
             tds_text = coa_text = msds_text = ""
 
-    doc = assemble_combined_document(
-        quotation_text, tds_text, coa_text, msds_text,
-        row.buyer_name, row.product_name, product_type,
+    batch_id = str(uuid.uuid4())
+    terms_html = get_terms(product_type)
+
+    return assemble_separate_documents(
+        quotation_text,
+        tds_text,
+        coa_text,
+        msds_text,
+        row.buyer_name,
+        row.product_name,
+        product_type,
+        batch_id=batch_id,
+        employee_name=row.employee_name,
+        letterhead=row.letterhead,
+        quotation_no=row.quotation_no,
+        company_name=row.company_name,
+        local_export=row.local_export,
+        terms_html=terms_html or None,
     )
-    return [doc]

@@ -16,7 +16,7 @@ class DocumentType(str, Enum):
     coc = "coc"  # Certificate of Conformance
     tds = "tds"  # Technical Data Sheet
     msds = "msds"  # Material Safety Data Sheet
-    combined = "combined"  # All-in-one: Quotation, TDS, COA, MSDS
+    combined = "combined"  # Legacy: no longer generated; kept for existing DB docs
 
 
 class RowInput(BaseModel):
@@ -48,6 +48,7 @@ class RowPreview(BaseModel):
     quotation_no: Optional[str] = None  # auto-generate if empty
     buyer_enquir_ref_no: Optional[str] = None
     address: Optional[str] = None
+    letterhead: Optional[str] = None  # "dubai" | "india" for chemical header address
     local_export: Optional[str] = None
     transportation: Optional[str] = None
     type_of_packing: Optional[str] = None
@@ -86,6 +87,13 @@ class DocumentBase(BaseModel):
     product_type: ProductType
     doc_type: DocumentType
     html_content: str
+    # Optional: from Excel / generation context
+    employee_name: Optional[str] = None  # person who entered the row
+    letterhead: Optional[str] = None  # "dubai" | "india" for chemical address/phone
+    batch_id: Optional[str] = None  # groups quotation, tds, coa, msds from same generation
+    quotation_no: Optional[str] = None
+    company_name: Optional[str] = None
+    local_export: Optional[str] = None  # "local" | "export" for currency (Rs vs $)
 
 
 class DocumentCreate(DocumentBase):
@@ -106,12 +114,40 @@ class DocumentSummary(BaseModel):
     doc_type: DocumentType
     created_at: datetime
     updated_at: datetime
+    employee_name: Optional[str] = None
+    batch_id: Optional[str] = None
 
 
 class ListDocumentsResponse(BaseModel):
     documents: list[DocumentSummary]
     total: int
     warning: Optional[str] = None  # Set when DB is unavailable but we return empty list
+
+
+class BatchSummary(BaseModel):
+    """One row per batch for dashboard: buyer, product, entered by, date, time."""
+    batch_id: str
+    buyer_name: str
+    product_name: str
+    product_type: str  # "chemical" | "engineering"
+    employee_name: Optional[str] = None
+    created_at: datetime
+
+
+class ListBatchesResponse(BaseModel):
+    batches: list[BatchSummary]
+    total: int
+    warning: Optional[str] = None
+
+
+class TermsResponse(BaseModel):
+    chemical: str = ""
+    engineering: str = ""
+
+
+class TermsUpdateRequest(BaseModel):
+    chemical: str | None = None
+    engineering: str | None = None
 
 
 class BulkDeleteRequest(BaseModel):

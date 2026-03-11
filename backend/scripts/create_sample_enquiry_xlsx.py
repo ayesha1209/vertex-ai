@@ -17,6 +17,7 @@ HEADERS = [
     "Buyer enquir Ref no",
     "Buyer Name",
     "Address",
+    "Letterhead",
     "Local/export",
     "Transportation",
     "type of packingg",
@@ -52,6 +53,7 @@ ROWS = [
         "Buyer enquir Ref no": "ENQ-2025-001",
         "Buyer Name": "Global Trading Co",
         "Address": "123 Industrial Area, Mumbai 400001, India",
+        "Letterhead": "dubai",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "25 Kg HDPE Bags",
@@ -84,6 +86,7 @@ ROWS = [
         "Buyer enquir Ref no": "EP-2025-042",
         "Buyer Name": "Euro Polymers GmbH",
         "Address": "Hafenstrasse 10, 20457 Hamburg, Germany",
+        "Letterhead": "india",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "from ai",
@@ -116,6 +119,7 @@ ROWS = [
         "Buyer enquir Ref no": "",
         "Buyer Name": "Test Buyer Inc",
         "Address": "",
+        "Letterhead": "india",
         "Local/export": "",
         "Transportation": "",
         "type of packingg": "",
@@ -148,6 +152,7 @@ ROWS = [
         "Buyer enquir Ref no": "VC-2025-101",
         "Buyer Name": "Al Rajhi Chemicals LLC",
         "Address": "P.O. Box 28, Jeddah 21411, Saudi Arabia",
+        "Letterhead": "dubai",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "50 Kg PP Bags",
@@ -180,6 +185,7 @@ ROWS = [
         "Buyer enquir Ref no": "EP-2025-088",
         "Buyer Name": "ChemTrade AG",
         "Address": "Bahnhofstrasse 45, 8001 Zurich, Switzerland",
+        "Letterhead": "india",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "25 Kg Paper Bags",
@@ -212,6 +218,7 @@ ROWS = [
         "Buyer enquir Ref no": "BT-2025-012",
         "Buyer Name": "Bangladesh Textiles Ltd",
         "Address": "Chittagong Export Processing Zone, Bangladesh",
+        "Letterhead": "dubai",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "from ai",
@@ -244,6 +251,7 @@ ROWS = [
         "Buyer enquir Ref no": "VN-2025-056",
         "Buyer Name": "Vietnam Plastics Co",
         "Address": "Ho Chi Minh City, Vietnam",
+        "Letterhead": "india",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "25 Kg HDPE Bags",
@@ -276,6 +284,7 @@ ROWS = [
         "Buyer enquir Ref no": "UK-2025-033",
         "Buyer Name": "British Agrochemicals Ltd",
         "Address": "Manchester, United Kingdom",
+        "Letterhead": "dubai",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "1 Ton Bulk Bags",
@@ -308,6 +317,7 @@ ROWS = [
         "Buyer enquir Ref no": "IN-2025-201",
         "Buyer Name": "Indian Pharma Solutions",
         "Address": "Hyderabad, Telangana, India",
+        "Letterhead": "india",
         "Local/export": "Local",
         "Transportation": "Road",
         "type of packingg": "25 Kg Drum",
@@ -340,6 +350,7 @@ ROWS = [
         "Buyer enquir Ref no": "KE-2025-007",
         "Buyer Name": "East Africa Fertilizers",
         "Address": "Nairobi, Kenya",
+        "Letterhead": "dubai",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "50 Kg Bags",
@@ -372,6 +383,7 @@ ROWS = [
         "Buyer enquir Ref no": "KR-2025-022",
         "Buyer Name": "Korea Petrochemicals Inc",
         "Address": "Seoul, South Korea",
+        "Letterhead": "india",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "20 MT Container",
@@ -404,6 +416,7 @@ ROWS = [
         "Buyer enquir Ref no": "EG-2025-041",
         "Buyer Name": "Egypt Soaps & Detergents",
         "Address": "Cairo, Egypt",
+        "Letterhead": "dubai",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "25 Kg HDPE",
@@ -436,6 +449,7 @@ ROWS = [
         "Buyer enquir Ref no": "AU-2025-015",
         "Buyer Name": "Australia Mining Supplies",
         "Address": "Perth, Western Australia",
+        "Letterhead": "india",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "1 MT Bulk Bags",
@@ -468,6 +482,7 @@ ROWS = [
         "Buyer enquir Ref no": "MX-2025-009",
         "Buyer Name": "Mexico Industrial Chemicals",
         "Address": "Monterrey, Mexico",
+        "Letterhead": "dubai",
         "Local/export": "Export",
         "Transportation": "Sea",
         "type of packingg": "from ai",
@@ -500,6 +515,7 @@ ROWS = [
         "Buyer enquir Ref no": "PL-2025-018",
         "Buyer Name": "Poland Coatings Ltd",
         "Address": "Warsaw, Poland",
+        "Letterhead": "india",
         "Local/export": "Export",
         "Transportation": "Road + Sea",
         "type of packingg": "25 Kg Paper Bags",
@@ -528,13 +544,18 @@ ROWS = [
 
 def main() -> None:
     backend = Path(__file__).resolve().parent.parent
-    docs_dir = backend.parent / "docs"
+    repo_root = backend.parent
+    docs_dir = repo_root / "docs"
     docs_dir.mkdir(parents=True, exist_ok=True)
-    out_path = docs_dir / "enquiry_sample.xlsx"
 
     df = pd.DataFrame(ROWS, columns=HEADERS)
-    df.to_excel(out_path, index=False, engine="openpyxl")
-    print("Created:", out_path)
+    # Write to repo root for easy access (Buyer Name, Letterhead, and other mock data)
+    out_root = repo_root / "enquiry_sample.xlsx"
+    df.to_excel(out_root, index=False, engine="openpyxl")
+    out_docs = docs_dir / "enquiry_sample.xlsx"
+    df.to_excel(out_docs, index=False, engine="openpyxl")
+    print("Created:", out_root)
+    print("Also:", out_docs)
     print("Rows:", len(ROWS))
     print("Columns:", list(df.columns))
 

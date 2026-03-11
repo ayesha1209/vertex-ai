@@ -95,6 +95,23 @@ def _get_header_footer_css() -> str:
     """
 
 
+def _header_footer_vars(letterhead: Optional[str] = None) -> tuple[str, str, str]:
+    """Return (header_phone, header_web, footer_line) for given letterhead. Dubai vs India."""
+    letterhead = (letterhead or "").strip().lower()
+    if letterhead == "dubai":
+        return (
+            "Mobile no : 971 525261658",
+            "vertexchemical.in",
+            "DSO-IFZA, IFZA Properties, Dubai Silicon Oasis &nbsp;|&nbsp; Mobile no : 971 525261658 &nbsp;|&nbsp; sales@vertexchemical.in",
+        )
+    # India (default)
+    return (
+        "+91 8866335159",
+        "vertexchemical.in",
+        "206/5, Signet Hub, Akshar Chowk, Vadodara-390020 &nbsp;|&nbsp; +91 99095 51658 &nbsp;|&nbsp; sales@vertexchemical.in",
+    )
+
+
 def _get_header_html() -> str:
     """Generate header HTML for PDF using xhtml2pdf pdf:template."""
     header_logo = _get_logo_base64(_HEADER_LOGO)
@@ -142,12 +159,13 @@ def _get_footer_html() -> str:
 '''
 
 
-def wrap_html_for_export(body_html: str, include_header_footer: bool = False) -> str:
+def wrap_html_for_export(body_html: str, include_header_footer: bool = False, letterhead: Optional[str] = None) -> str:
     """
     Wrap TipTap/editor HTML in a full document with the export print CSS.
     Single source for both DOCX and PDF. Normalizes page-break divs.
+    letterhead: "dubai" | "india" | None for chemical header/footer address and phone.
     """
-    logger.info(f">>> wrap_html_for_export called, include_header_footer={include_header_footer}")
+    logger.info(f">>> wrap_html_for_export called, include_header_footer={include_header_footer}, letterhead={letterhead}")
     body_html = _normalize_body(body_html)
     
     if include_header_footer:
@@ -157,13 +175,12 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False) ->
         icon_location = _get_logo_base64(_ICON_LOCATION)
         icon_phone = _get_logo_base64(_ICON_PHONE)
         icon_email = _get_logo_base64(_ICON_EMAIL)
+        h_phone, h_web, footer_line = _header_footer_vars(letterhead)
         
         logger.info(f">>> Header logo loaded: {len(header_logo)} chars")
         logger.info(f">>> Footer logo loaded: {len(footer_logo)} chars")
         
         # xhtml2pdf approach: use @page with static frames
-        # The key is to define frames in CSS and reference content by id
-        
         header_table = f'''<table class="hf-table" style="width:100%; border:none !important; border-collapse:collapse; background:none !important;">
 <tr style="border:none !important; background:none !important;">
 <td style="width:65px; padding:2px; vertical-align:middle; border:none !important; background:none !important;">
@@ -174,8 +191,8 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False) ->
 <span style="font-size:7px; color:#666;">YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY</span>
 </td>
 <td style="width:145px; border:none !important; border-left:1px solid #999 !important; padding:2px 2px 2px 10px; vertical-align:middle; text-align:right; background:none !important;">
-<span style="font-size:8px; color:#333;"><b>Phone:</b> +91 8866335159</span><br/>
-<span style="font-size:8px; color:#333;"><b>Web:</b> vertexchemical.in</span>
+<span style="font-size:8px; color:#333;"><b>Phone:</b> {h_phone}</span><br/>
+<span style="font-size:8px; color:#333;"><b>Web:</b> {h_web}</span>
 </td>
 </tr>
 </table>
@@ -188,13 +205,7 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False) ->
 <img src="{footer_logo}" width="40"/>
 </td>
 <td style="padding:2px 8px; vertical-align:middle; text-align:left; border:none !important; background:none !important;">
-<img src="{icon_location}" width="12" height="12" style="vertical-align:middle;"/> <span style="font-size:8px; color:#555;">206/5, Signet Hub, Akshar Chowk, Vadodara-390020</span>
-</td>
-<td style="padding:2px 8px; vertical-align:middle; text-align:center; border:none !important; background:none !important;">
-<img src="{icon_phone}" width="12" height="12" style="vertical-align:middle;"/>&nbsp;&nbsp;<span style="font-size:8px; color:#555;">+91 99095 51658</span>
-</td>
-<td style="padding:2px 8px; vertical-align:middle; text-align:right; border:none !important; background:none !important;">
-<img src="{icon_email}" width="12" height="12" style="vertical-align:middle;"/>&nbsp;&nbsp;<span style="font-size:8px; color:#555;">sales@vertexchemical.in</span>
+<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_line}</p>
 </td>
 </tr>
 </table>'''
@@ -344,14 +355,14 @@ def html_to_docx(html: str, title: str = "Document") -> bytes:
     return docx_buffer.getvalue()
 
 
-def html_to_pdf(html: str) -> bytes:
+def html_to_pdf(html: str, letterhead: Optional[str] = None) -> bytes:
     """
     Generate PDF from TipTap HTML. Prefer WeasyPrint; fallback to xhtml2pdf.
     A4, fixed margins, stable tables, page-break control.
-    Includes header and footer on every page.
+    Includes header and footer on every page. letterhead: "dubai" | "india" | None.
     """
-    logger.info(">>> html_to_pdf called")
-    full_html = wrap_html_for_export(html, include_header_footer=True)
+    logger.info(">>> html_to_pdf called, letterhead=%s", letterhead)
+    full_html = wrap_html_for_export(html, include_header_footer=True, letterhead=letterhead)
     
     pdf_bytes: Optional[bytes] = _pdf_weasyprint(full_html)
     if pdf_bytes is not None:

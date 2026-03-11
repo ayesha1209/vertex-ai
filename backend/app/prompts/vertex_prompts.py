@@ -1,10 +1,28 @@
 """
-Exact format from reference files and Quotation. Output: one combined doc Quotation → TDS → COA → MSDS.
+Exact format from reference files and Quotation. Output: separate Quotation, TDS, COA, and MSDS documents.
 PDF should render like the reference documents (horizontal lines, table borders, section layout).
 Export/Domestic compliance and chemical isolation rules are enforced.
 """
 
 from app.prompts.reference_structures import get_coa_template, get_msds_template, get_tds_template
+
+# Default Terms & Conditions (used in prompt and returned by API when DB has none)
+DEFAULT_TERMS = """TERMS & CONDITIONS:
+1. Prices are quoted in USD/INR as mentioned and based on Incoterms 2020.
+2. Offer validity is 3-7 days from the date of quotation.
+3. Prices are subject to change without prior notice after validity expiry.
+4. Domestic payment: 100% advance or 50% advance & balance before dispatch.
+5. Export payment: 30% advance & 70% before shipment OR Irrevocable LC at sight.
+6. All bank charges outside India are to buyer's account.
+7. Delivery period: 2-6 weeks from receipt of confirmed payment/LC.
+8. Partial shipment and transshipment allowed unless otherwise agreed.
+9. Packing: Standard export-worthy packing as specified in quotation.
+10. Third-party inspection, if required, shall be at buyer's cost.
+11. Seller's COA shall be final for quality reference.
+12. Insurance covered only for CIF shipments; otherwise buyer's responsibility.
+13. Claims must be reported within 7 days of receipt of goods.
+14. Seller not liable for delay due to Force Majeure circumstances.
+15. All disputes subject to Gujarat, India jurisdiction."""
 
 # ---- Export Chemical Documentation Compliance (MANDATORY) ----
 COMPLIANCE_RULES = """
@@ -18,12 +36,12 @@ Treat as EXPORT if ANY are present:
 - IEC code present
 
 If EXPORT:
-• Currency = USD ONLY. Use "USD" and "$" only. Never Rs., Lakh, Crore.
+• Currency = USD ONLY. Use "USD" and "$" only. Never ₹ or Rs., Lakh, Crore.
 • Transport mode = Sea or Air (never Road).
 • Use international number format only (e.g. 1,000.00 not 1,00,000).
 
 If DOMESTIC (buyer country = India):
-• Currency = INR. Use "Rs." and Indian number format as needed.
+• Currency = INR. Use "₹" (rupee symbol) and Indian number format as needed.
 
 --------------------------------------------------
 DATA & CONTENT RULES (avoid incomplete/unprofessional output)
@@ -43,10 +61,10 @@ DATA & CONTENT RULES (avoid incomplete/unprofessional output)
   - GSTIN: Indian GST number only. If supplier is not Indian, use N/A for GSTIN.
 • Pricing (Unit Price, Amount, Total):
   - When Unit Price is provided: always calculate Amount = Qty × Unit Price and Total. Fill Amount in Words with the correct currency.
-  - When Unit Price is missing: generate a realistic unit price based on the product (name, type, grade), quantity, unit (MT/kg/etc.), and context (export = USD, domestic = INR). Use plausible market-level assumptions (e.g. commodity chemicals in typical USD/MT or Rs./kg ranges). Then calculate Amount and Total and fill Amount in Words so the document looks complete and professional. Do not leave price, amount, or total blank or N/A when quantity is known.
+  - When Unit Price is missing: generate a realistic unit price based on the product (name, type, grade), quantity, unit (MT/kg/etc.), and context (export = USD, domestic = INR). Use plausible market-level assumptions (e.g. commodity chemicals in typical USD/MT or ₹/kg ranges). Then calculate Amount and Total and fill Amount in Words so the document looks complete and professional. Do not leave price, amount, or total blank or N/A when quantity is known.
 • Currency (mandatory):
   - Export: USD only. Use "$" and "USD". Amount in words: "[number] US Dollars Only" or "[number] USD Only". Number format: 1,000.00 (international).
-  - Domestic: INR only. Use "Rs." and "INR". Amount in words: "[number] Rupees Only" or "Indian Rupees Only". Apply same currency to Unit Price, Amount, Total and Amount in Words.
+  - Domestic: INR only. Use "₹" (rupee symbol) and "INR". Amount in words: "[number] Rupees Only" or "Indian Rupees Only". Apply same currency to Unit Price, Amount, Total and Amount in Words.
 • Naming consistency:
   - Use ONE canonical form for supplier/company name in the entire document (e.g. "Vertex Chemical Corporation" or "VERTEX CHEMICALS" as appropriate). Use the same product name in Quotation, TDS, COA, MSDS. Do not alternate between variants.
 • Typos and label accuracy (MANDATORY — avoid before output):
@@ -231,7 +249,7 @@ Port of Loading|[Port of loading]|Bank Name|[Bank Name]
 Port of Discharge|[Port of discharge]|Branch|[Branch]
 Country of Origin|[e.g. INDIA]|IFSC Code|[IFSC Code]
 Terms of Delivery|[Incoterm e.g. FOB/CIF]| |
-Currency|[Rs. / USD]| |
+Currency|[₹ / USD]| |
 ---TABLE---
 
 === SECTION 3: ITEM TABLE (Five Columns with header row) ===
@@ -264,9 +282,6 @@ TERMS & CONDITIONS:
 13. Claims must be reported within 7 days of receipt of goods.
 14. Seller not liable for delay due to Force Majeure circumstances.
 15. All disputes subject to Gujarat, India jurisdiction.
-
-AUTHORIZED SIGNATORY:
-Place & Date: [Place], [Date]
 ---TERMSBLOCK---
 """
 
@@ -287,7 +302,7 @@ Place & Date: [Place], [Date]
 SYSTEM_PROMPT = _build_system_prompt()
 
 USER_PROMPT_TEMPLATE = """Data (use if non-empty else generate with smart defaults): Company/Supplier={company_name} QuotationNo={quotation_no} Buyer={buyer_name} Product={product_name} Address={address} Country={country} Email={email_id} Contact={contact_no} Manufacturer={manufacturer_name} Desc={product_description} HSN={hsn_code} CAS={cas_no} Qty={quantity} Unit={unit} Packing={packing} Price={price} FOB/CIF={price_fob_cif} PortLoad={port_of_loading} PortUnload={port_of_unloading} Incoterm={incoterm} Payment={payment_terms} Remarks={remarks}
-Use Company/Supplier as Make and in bank/signatory when Manufacturer is empty. For export use USD and $; for domestic (India) use Rs. and INR. When Price is missing, generate a realistic unit price from the product, quantity, unit, and market (export/domestic), then calculate Amount and Total and fill Amount in Words. Always fill pricing and amount in words. Minimize N/A; omit irrelevant COA rows; keep supplier and product names consistent. Ensure: no typos; supplier location matches Country/Address; COA "15 Test Parameters" has exactly 15 rows; MSDS Section 14 transport matches Section 2 hazard; product name wording matches content (e.g. LABSA / Sulphonic Acid → acid form only, never LAS/salt properties).
+Use Company/Supplier as Make and in bank/signatory when Manufacturer is empty. For export use USD and $; for domestic (India) use ₹ (rupee symbol) and INR. When Price is missing, generate a realistic unit price from the product, quantity, unit, and market (export/domestic), then calculate Amount and Total and fill Amount in Words. Always fill pricing and amount in words. Minimize N/A; omit irrelevant COA rows; keep supplier and product names consistent. Ensure: no typos; supplier location matches Country/Address; COA "15 Test Parameters" has exactly 15 rows; MSDS Section 14 transport matches Section 2 hazard; product name wording matches content (e.g. LABSA / Sulphonic Acid → acid form only, never LAS/salt properties).
 PORTS (MANDATORY for export): If PortLoad or PortUnload is empty, generate appropriate port names based on supplier location (Port of Loading) and buyer's Country/Address (Port of Discharge). Use major international ports - never leave ports as N/A for export orders.
 MULTIPLE PRODUCTS: If Product field contains comma-separated items (e.g. "Sodium Carbonate, Urea, Calcium Chloride"):
 1. QUOTATION: Create ONE quotation with multiple line items in the items table (use // separator for line breaks):

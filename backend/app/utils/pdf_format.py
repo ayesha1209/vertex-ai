@@ -69,7 +69,7 @@ def _ensure_inline_styles(html: str) -> str:
 
 def normalize_body_for_pdf(body_html: str) -> str:
     """
-    Normalize combined document HTML for best PDF/DOCX output.
+    Normalize document HTML for best PDF/DOCX output.
     Ensures page-break divs and tables have inline styles.
     """
     body_html = re.sub(
