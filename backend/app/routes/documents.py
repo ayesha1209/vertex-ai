@@ -30,23 +30,39 @@ from app.schemas.document import (
 )
 from app.prompts.vertex_prompts import DEFAULT_TERMS
 from app.services.document_generation import generate_documents_for_row
+
+
+def _strip_signatory_from_terms(text: str) -> str:
+    """Remove AUTHORIZED SIGNATORY / Place & Date block from terms. Terms page must not show signatory."""
+    if not text or not text.strip():
+        return text
+    upper = text.upper()
+    idx = upper.find("AUTHORIZED SIGNATORY")
+    if idx == -1:
+        idx = upper.find("AUTHORIZED SIGNED")
+    if idx != -1:
+        # Keep only content before the signatory block; trim trailing newlines/spaces
+        text = text[:idx].rstrip()
+    return text
 from app.services.export import html_to_pdf
 from app.utils.excel_parser import parse_excel_to_previews
 
-# In-memory job store: job_id -> {"status": "running"|"done", "queue": Queue}
+# In-memory job store: job_id -> {"status": "running"|"done", "queue": Queue, "cancelled": bool}
 _job_store: dict[str, dict[str, Any]] = {}
 # Max events to keep per job so late-joining clients get something
 _JOB_QUEUE_MAX = 500
 
 
 def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
-    """Run in thread: generate docs for each row, push to job queue."""
+    """Run in thread: generate docs for each row, push to job queue. Stops if job is cancelled."""
     store = _job_store.get(job_id)
     if not store or store["status"] == "done":
         return
     q: Queue = store["queue"]
     try:
         for row in rows:
+            if store.get("cancelled"):
+                break
             docs_to_insert = generate_documents_for_row(row)
             now = now_local()
             for doc in docs_to_insert:
@@ -129,7 +145,7 @@ async def generate_batch(payload: GenerateBatchRequest) -> GenerateBatchResponse
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No rows provided")
     job_id = str(uuid.uuid4())
     q: Queue = Queue(maxsize=_JOB_QUEUE_MAX)
-    _job_store[job_id] = {"status": "running", "queue": q}
+    _job_store[job_id] = {"status": "running", "queue": q, "cancelled": False}
     asyncio.get_event_loop().run_in_executor(
         None,
         _run_batch_sync,
@@ -175,6 +191,15 @@ async def job_stream(job_id: str) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def job_cancel(job_id: str) -> dict[str, Any]:
+    """Mark job as cancelled. The running batch will stop after the current row; stream will receive 'done'."""
+    if job_id not in _job_store:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    _job_store[job_id]["cancelled"] = True
+    return {"job_id": job_id, "cancelled": True}
 
 
 @router.get("/jobs/{job_id}/status")
@@ -410,6 +435,21 @@ async def list_batches(
         )
 
 
+@router.delete("/documents/batches/{batch_id}", status_code=status.HTTP_200_OK)
+async def delete_batch(batch_id: str) -> dict[str, int]:
+    """Delete all documents in a batch. Returns deleted count."""
+    if not batch_id or not batch_id.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch id required")
+    try:
+        result = documents_collection.delete_many({"batch_id": batch_id.strip()})
+        return {"deleted": result.deleted_count}
+    except PyMongoError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database error",
+        ) from e
+
+
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(doc_id: str) -> None:
     """Delete a single document by id."""
@@ -455,40 +495,46 @@ async def get_document(doc_id: str) -> DocumentInDB:
 
 @router.get("/terms", response_model=TermsResponse)
 async def get_terms() -> TermsResponse:
-    """Get editable Terms and Conditions for Chemical and Engineering. When DB has none, returns default from prompt."""
+    """Get editable Terms and Conditions for Chemical and Engineering. Signatory block is stripped for the Terms page."""
     try:
         doc = terms_collection.find_one({"_id": TERMS_DOC_ID})
     except Exception:
-        return TermsResponse(chemical=DEFAULT_TERMS, engineering=DEFAULT_TERMS)
+        return TermsResponse(
+            chemical=_strip_signatory_from_terms(DEFAULT_TERMS),
+            engineering=_strip_signatory_from_terms(DEFAULT_TERMS),
+        )
     if not doc:
-        return TermsResponse(chemical=DEFAULT_TERMS, engineering=DEFAULT_TERMS)
+        return TermsResponse(
+            chemical=_strip_signatory_from_terms(DEFAULT_TERMS),
+            engineering=_strip_signatory_from_terms(DEFAULT_TERMS),
+        )
     chemical = (doc.get("chemical") or "").strip()
     engineering = (doc.get("engineering") or "").strip()
     return TermsResponse(
-        chemical=chemical or DEFAULT_TERMS,
-        engineering=engineering or DEFAULT_TERMS,
+        chemical=_strip_signatory_from_terms(chemical or DEFAULT_TERMS),
+        engineering=_strip_signatory_from_terms(engineering or DEFAULT_TERMS),
     )
 
 
 @router.put("/terms", response_model=TermsResponse)
 async def update_terms(payload: TermsUpdateRequest) -> TermsResponse:
-    """Update Terms and Conditions. Changes apply to all newly generated documents."""
+    """Update Terms and Conditions. Signatory block is stripped so it is not stored or shown on Terms page."""
     try:
         doc = terms_collection.find_one({"_id": TERMS_DOC_ID}) or {"chemical": "", "engineering": ""}
         if not isinstance(doc, dict):
             doc = {"chemical": "", "engineering": ""}
         updates = {}
         if payload.chemical is not None:
-            updates["chemical"] = payload.chemical.strip()
+            updates["chemical"] = _strip_signatory_from_terms(payload.chemical.strip())
         if payload.engineering is not None:
-            updates["engineering"] = payload.engineering.strip()
+            updates["engineering"] = _strip_signatory_from_terms(payload.engineering.strip())
         doc = {**doc, **updates, "_id": TERMS_DOC_ID}
         doc.setdefault("chemical", "")
         doc.setdefault("engineering", "")
         terms_collection.replace_one({"_id": TERMS_DOC_ID}, doc, upsert=True)
         return TermsResponse(
-            chemical=doc.get("chemical", ""),
-            engineering=doc.get("engineering", ""),
+            chemical=_strip_signatory_from_terms(doc.get("chemical", "")),
+            engineering=_strip_signatory_from_terms(doc.get("engineering", "")),
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
@@ -526,6 +572,22 @@ def _sanitize_filename(s: str, max_len: int = 80) -> str:
     return s[:max_len]
 
 
+def _extract_quotation_no_from_html(html: str) -> str | None:
+    """Try to extract quotation number from document HTML (e.g. Quotation No|AC/001/26/03 or table cell)."""
+    if not html:
+        return None
+    import re
+    # Pattern: "Quotation No" then optional pipes/tags/spaces then value (e.g. AC/001/26/03)
+    m = re.search(
+        r"Quotation\s+No[\s|</>td=:\-]*([A-Za-z0-9/_-]{3,})",
+        html,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+    return None
+
+
 @router.get("/documents/{doc_id}/pdf")
 async def get_pdf(doc_id: str) -> Response:
     """Return document as PDF file. Filename by doc_type: QF_* for quotation, TDS_*, COA_*, MSDS_*."""
@@ -554,7 +616,8 @@ async def get_pdf(doc_id: str) -> Response:
     doc_type = doc.get("doc_type", "document")
 
     if doc_type == "quotation":
-        qno = _sanitize_filename(doc.get("quotation_no") or "Q", 30)
+        qno_raw = doc.get("quotation_no") or _extract_quotation_no_from_html(html) or "Q"
+        qno = _sanitize_filename(qno_raw, 30)
         company = _sanitize_filename(doc.get("company_name") or "Company", 30)
         filename = f"QF_{qno}_{company}_{buyer}_{product}.pdf"
     elif doc_type == "tds":

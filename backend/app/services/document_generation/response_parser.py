@@ -140,6 +140,9 @@ def _flush_quotation_table(
             while len(cells) < 4:
                 cells.append("")
             cells = cells[:4]
+            # Do not include Currency / Currency USD row in delivery table (user requested removal)
+            if table_type == _Q_TABLE_DELIVERY and cells[0].strip().lower().startswith("currency"):
+                continue
         
         if not any(cells):
             continue
@@ -257,87 +260,91 @@ def _flush_table(
     html_lines.append("</table>")
 
 
-def _render_terms_block(lines: list[str], start_idx: int, html_lines: list[str]) -> int:
-    """Render the TERMS block with signature beside last terms (not on new page)."""
+def _render_terms_block(
+    lines: list[str], start_idx: int, html_lines: list[str], multi_product: bool = False
+) -> int:
+    """Render the TERMS block. Multi-product: all terms full width, signatory after 15. Else: 13–15 left, signatory right."""
     i = start_idx + 1  # Skip ---TERMSBLOCK---
-    terms_lines: list[str] = []
-    signature_lines: list[str] = []
+    terms_lines = []
+    signature_lines = []
     in_signature = False
-    
-    logger.info(f">>> _render_terms_block starting at line {start_idx}")
-    
+
     while i < len(lines):
         line = lines[i].strip()
         if line == "---TERMSBLOCK---" or line == "---TERMS---":
             i += 1
             break
-        if "AUTHORIZED SIGNATORY" in line.upper():
+        is_sig_like = "AUTHORIZED" in line.upper() or ("PLACE" in line.upper() and "DATE" in line.upper())
+        if "AUTHORIZED SIGNATORY" in line.upper() or is_sig_like:
             in_signature = True
             signature_lines.append(line)
-            logger.info(f">>> Found AUTHORIZED SIGNATORY at line {i}: '{line}'")
         elif in_signature:
             if line:
                 signature_lines.append(line)
-                logger.info(f">>> Signature line: '{line}'")
         else:
             if line:
                 terms_lines.append(line)
         i += 1
-    
-    logger.info(f">>> Terms lines count: {len(terms_lines)}")
-    logger.info(f">>> Signature lines count: {len(signature_lines)}")
-    logger.info(f">>> Signature lines: {signature_lines}")
-    
-    # Split terms: first part full width, last 2-3 items beside signature (moved up)
-    split_point = max(0, len(terms_lines) - 3) if signature_lines else len(terms_lines)
-    terms_upper = terms_lines[:split_point]
-    terms_lower = terms_lines[split_point:]
-    
-    logger.info(f">>> Split point: {split_point}, upper terms: {len(terms_upper)}, lower terms: {len(terms_lower)}")
-    
-    # Render upper terms (full width)
-    if terms_upper:
-        html_lines.append('<div class="terms-section" style="width:100%;">')
-        for ln in terms_upper:
-            if ln.startswith("TERMS"):
-                html_lines.append(f"<p><strong>{escape(ln)}</strong></p>")
-            else:
-                html_lines.append(f"<p>{escape(ln)}</p>")
-        html_lines.append("</div>")
-    
-    # Render lower terms + signature side by side using table
-    if terms_lower or signature_lines:
-        logger.info(f">>> Rendering terms-sig-table with {len(terms_lower)} lower terms and {len(signature_lines)} signature lines")
-        html_lines.append('<table class="terms-sig-table" style="width:100%; border:none !important; border-collapse:collapse; margin-top:0; page-break-inside:avoid !important;">')
+
+    if multi_product:
+        terms_upper = terms_lines
+        terms_lower = []
+    else:
+        split_idx = None
+        for idx, ln in enumerate(terms_lines):
+            if re.match(r"^\s*13\.", ln.strip()):
+                split_idx = idx
+                break
+        terms_upper = terms_lines[:split_idx] if split_idx is not None else terms_lines
+        terms_lower = terms_lines[split_idx:] if split_idx is not None else []
+
+    html_lines.append('<div class="terms-sig-wrapper" style="page-break-before:avoid !important; page-break-inside:avoid !important; margin-top:0; padding-top:0;">')
+    html_lines.append('<div class="terms-section terms-upper" style="width:100%; page-break-after:avoid !important;">')
+    for ln in terms_upper:
+        if ln.startswith("TERMS"):
+            html_lines.append(f"<p style=\"margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+        else:
+            html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
+    html_lines.append("</div>")
+    if terms_lower and signature_lines:
+        html_lines.append('<table class="terms-sig-table" style="width:100%; border:none !important; border-collapse:collapse; margin:0; margin-top:0; page-break-inside:avoid !important;">')
         html_lines.append('<tr style="border:none !important; vertical-align:top;">')
-        
-        # Left column: remaining terms
-        html_lines.append('<td class="terms-section" style="width:60%; border:none !important; padding:0; vertical-align:top;">')
+        html_lines.append('<td class="terms-section terms-left-col" style="width:60%; border:none !important; padding:0 12px 0 0 !important; padding-left:0 !important; margin:0; vertical-align:top;"><div class="terms-section" style="display:block; padding-left:0; margin-left:0;">')
         for ln in terms_lower:
-            if ln.startswith("TERMS"):
-                html_lines.append(f"<p><strong>{escape(ln)}</strong></p>")
-            else:
-                html_lines.append(f"<p>{escape(ln)}</p>")
-        html_lines.append('</td>')
-        
-        # Right column: signature (aligned to top)
-        html_lines.append('<td style="width:40%; border:none !important; padding:0 0 0 10px; text-align:right; vertical-align:top;">')
-        if signature_lines:
-            for ln in signature_lines:
-                html_lines.append(f"<p style=\"text-align:right;margin:1px 0;\"><strong>{escape(ln)}</strong></p>")
-        html_lines.append('</td>')
-        
-        html_lines.append('</tr>')
-        html_lines.append('</table>')
-    
+            html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
+        html_lines.append("</div></td>")
+        html_lines.append('<td style="width:40%; border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0; page-break-before:avoid !important;">')
+        for ln in signature_lines:
+            parts = [p.strip() for p in ln.split("|") if p.strip()]
+            for part in parts:
+                html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
+            if not parts:
+                html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+        html_lines.append("</div></td></tr></table>")
+    elif terms_lower:
+        html_lines.append('<div class="terms-section" style="width:100%;">')
+        for ln in terms_lower:
+            html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
+        html_lines.append("</div>")
+    elif signature_lines:
+        html_lines.append('<div class="signatory-block" style="text-align:right; margin-top:4px; page-break-before:avoid !important;">')
+        for ln in signature_lines:
+            parts = [p.strip() for p in ln.split("|") if p.strip()]
+            for part in parts:
+                html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
+            if not parts:
+                html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+        html_lines.append("</div>")
+    html_lines.append("</div>")
     return i
 
 
-def text_to_html(text: str, compact: bool = False) -> str:
+def text_to_html(text: str, compact: bool = False, multi_product: bool = False) -> str:
     """
     Convert AI text to clean HTML. Inline styles only for best PDF/DOCX output.
     Preserves: tables (| and ---TABLE---), horizontal rules (---), bullets, headings.
     If compact=True (for quotation), uses smaller fonts and tight padding for one-page layout.
+    If multi_product=True (quotation with multiple products), terms are full width and signatory after 15.
     """
     text = _normalize_spacing(text)
     lines = text.splitlines()
@@ -383,19 +390,35 @@ def text_to_html(text: str, compact: bool = False) -> str:
         if stripped in ("---TERMS---", "---TERMSBLOCK---") or stripped.startswith("TERMS & CONDITIONS"):
             close_ul()
             if stripped.startswith("TERMS & CONDITIONS"):
-                # Collect all terms and signature lines
+                # Collect all terms and signature lines (like pre–editable-terms behaviour: one block, no new page)
                 terms_lines: list[str] = [stripped]
                 signature_lines: list[str] = []
                 in_sig = False
                 i += 1
+                # Only break on # when it starts the next document section (TDS/COA/MSDS), not on e.g. "# AUTHORIZED"
+                def _is_next_section_header(line: str) -> bool:
+                    if not line.startswith("#"):
+                        return False
+                    u = line.upper()
+                    return (
+                        "TECHNICAL DATA" in u or "TECHNICAL DATA SHEET" in u
+                        or "CERTIFICATE OF ANALYSIS" in u or " COA " in u or u.strip().startswith("# COA")
+                        or "MATERIAL SAFETY" in u or "MSDS" in u
+                        or ("SECTION" in u and "===" in line)
+                    )
                 while i < len(lines):
                     ln = lines[i].strip()
                     if ln == "---TERMSBLOCK---" or ln == "---TERMS---":
                         i += 1
                         break
-                    if ln.startswith("#") or ("|" in ln and not in_sig):
+                    if _is_next_section_header(ln):
                         break
-                    if "AUTHORIZED SIGNATORY" in ln.upper():
+                    # Do not break on "|" for signatory-like lines (e.g. "Authorized Signatory | Place & Date | Hamburg")
+                    # so they are not rendered as a pipe table row; we collect and render them stacked.
+                    is_sig_like = "AUTHORIZED" in ln.upper() or ("PLACE" in ln.upper() and "DATE" in ln.upper())
+                    if "|" in ln and not in_sig and not is_sig_like:
+                        break
+                    if "AUTHORIZED SIGNATORY" in ln.upper() or is_sig_like:
                         in_sig = True
                         signature_lines.append(ln)
                     elif in_sig:
@@ -408,28 +431,59 @@ def text_to_html(text: str, compact: bool = False) -> str:
                 
                 logger.info(f">>> Quotation terms: {len(terms_lines)} lines, signature: {len(signature_lines)} lines")
                 
-                # Wrap everything in a container to prevent page break
-                html_lines.append('<div class="terms-sig-wrapper" style="page-break-inside:avoid !important;">')
-                
-                # Render all terms (full width, consistent alignment)
-                html_lines.append('<div class="terms-section" style="width:100%;">')
-                for ln in terms_lines:
+                # Multi-product: all terms full width, signatory after 15. Single-product: 13–15 left, signatory right.
+                if multi_product:
+                    terms_upper = terms_lines
+                    terms_lower = []
+                else:
+                    split_idx = None
+                    for idx, ln in enumerate(terms_lines):
+                        if re.match(r"^\s*13\.", ln.strip()):
+                            split_idx = idx
+                            break
+                    terms_upper = terms_lines[:split_idx] if split_idx is not None else terms_lines
+                    terms_lower = terms_lines[split_idx:] if split_idx is not None else []
+                html_lines.append('<div class="terms-sig-wrapper" style="page-break-before:avoid !important; page-break-inside:avoid !important; margin-top:0; padding-top:0;">')
+                html_lines.append('<div class="terms-section terms-upper" style="width:100%; page-break-after:avoid !important;">')
+                for ln in terms_upper:
                     if ln.startswith("TERMS"):
-                        html_lines.append(f"<p><strong>{escape(ln)}</strong></p>")
+                        html_lines.append(f"<p style=\"margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
                     else:
-                        html_lines.append(f"<p>{escape(ln)}</p>")
+                        html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
                 html_lines.append("</div>")
-                
-                # Render signature at bottom right
-                if signature_lines:
-                    html_lines.append('<div style="text-align:right; margin-top:8px;">')
+                if terms_lower and signature_lines:
+                    # 13–15 left, signatory right; zero left padding so 13,14,15 align with 1–12
+                    html_lines.append('<table class="terms-sig-table" style="width:100%; border:none !important; border-collapse:collapse; margin:0; margin-top:0; page-break-inside:avoid !important;">')
+                    html_lines.append('<tr style="border:none !important; vertical-align:top;">')
+                    html_lines.append('<td class="terms-section terms-left-col" style="width:60%; border:none !important; padding:0 12px 0 0 !important; padding-left:0 !important; margin:0; vertical-align:top;"><div class="terms-section" style="display:block; padding-left:0; margin-left:0;">')
+                    for ln in terms_lower:
+                        html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
+                    html_lines.append("</div></td>")
+                    html_lines.append('<td style="width:40%; border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0; page-break-before:avoid !important;">')
                     for ln in signature_lines:
-                        html_lines.append(f"<p style=\"text-align:right;margin:1px 0;\"><strong>{escape(ln)}</strong></p>")
+                        parts = [p.strip() for p in ln.split("|") if p.strip()]
+                        for part in parts:
+                            html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
+                        if not parts:
+                            html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+                    html_lines.append("</div></td></tr></table>")
+                elif terms_lower:
+                    html_lines.append('<div class="terms-section" style="width:100%;">')
+                    for ln in terms_lower:
+                        html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
                     html_lines.append("</div>")
-                
-                html_lines.append('</div>')
+                elif signature_lines:
+                    html_lines.append('<div class="signatory-block" style="text-align:right; margin-top:4px; page-break-before:avoid !important;">')
+                    for ln in signature_lines:
+                        parts = [p.strip() for p in ln.split("|") if p.strip()]
+                        for part in parts:
+                            html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
+                        if not parts:
+                            html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+                    html_lines.append("</div>")
+                html_lines.append("</div>")
             else:
-                i = _render_terms_block(lines, i, html_lines)
+                i = _render_terms_block(lines, i, html_lines, multi_product)
             continue
         
         # Skip signature block markers (handled in terms block)

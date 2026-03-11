@@ -13,7 +13,8 @@ EXPORT_PRINT_CSS = """
     box-sizing: border-box;
   }
   body {
-    font-family: Arial, Helvetica, sans-serif !important;
+    /* DejaVu Sans / Liberation Sans support ₹ (rupee); fallback to Arial */
+    font-family: "DejaVu Sans", "Liberation Sans", Arial, Helvetica, sans-serif !important;
     font-size: 11px !important;
     line-height: 1.35 !important;
     color: #1a1a1a !important;
@@ -172,7 +173,15 @@ EXPORT_PRINT_CSS = """
   .items-table td:nth-child(5) {
     width: 20% !important;
   }
-  /* Terms + signature side-by-side table - no borders, keep together */
+  /* Terms + signatory: allow flow; no extra space before block */
+  .terms-sig-wrapper {
+    page-break-before: avoid !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+  .signatory-block {
+    page-break-before: avoid !important;
+  }
   .terms-sig-table,
   .terms-sig-table tr,
   .terms-sig-table td {
@@ -181,10 +190,25 @@ EXPORT_PRINT_CSS = """
   }
   .terms-sig-table {
     page-break-inside: avoid !important;
-    -pdf-keep-with-next: false;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
-  /* Keep terms section together */
-  .terms-section {
-    page-break-inside: avoid !important;
+  /* No left padding on first column so 13–15 align with 1–12 */
+  .terms-sig-table td {
+    padding: 0 !important;
+  }
+  .terms-sig-table td:first-child {
+    padding-left: 0 !important;
+    padding-right: 12px !important;
+  }
+  .terms-sig-table td:last-child {
+    padding: 0 !important;
+  }
+  .terms-sig-table .terms-left-col {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+  .terms-section p {
+    display: block !important;
   }
 """

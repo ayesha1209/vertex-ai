@@ -52,10 +52,89 @@ _TABLE_INLINE = (
 )
 _PAGE_BREAK_INLINE = "page-break-after: always;"
 
+
+def _restore_quotation_format(html: str) -> str:
+    """
+    Restore structure/classes that the editor may strip on save, so PDF/DOCX match pre-edit format.
+    - Re-apply items-table / totals-table to quotation tables.
+    - Re-apply terms-sig-wrapper to the terms block div if missing.
+    """
+    if not html or not html.strip():
+        return html
+    # 1) Restore items-table: first table that has quotation columns (Description of Goods, Unit Price) but no class
+    for m in re.finditer(r"<table(\s[^>]*)?>", html):
+        tag = m.group(0)
+        if "class=" in tag:
+            continue
+        start = m.end()
+        end = min(start + 1200, len(html))
+        chunk = html[start:end]
+        if ("Description of Goods" in chunk or "Quantity" in chunk) and "Unit Price" in chunk:
+            new_tag = "<table class=\"items-table\" " + (m.group(1) or "").lstrip()
+            if not new_tag.endswith(">"):
+                new_tag = new_tag.rstrip() + ">"
+            html = html[: m.start()] + new_tag + html[m.end() :]
+            break
+    # 2) Restore totals-table: first table containing "Total Amount" without that class
+    pos = html.find("Total Amount")
+    if pos != -1:
+        look = html[:pos].rfind("<table")
+        if look != -1:
+            tag_end = html.find(">", look)
+            if tag_end != -1 and "totals-table" not in html[look:tag_end] and "class=" not in html[look:tag_end]:
+                after = look + 6
+                insert = ' class="totals-table"'
+                if html[after : after + 1] not in (" ", ">"):
+                    insert = " " + insert
+                html = html[:after] + insert + html[after:]
+    # 3) Restore terms-sig-wrapper on the div that contains TERMS & CONDITIONS (and AUTHORIZED) but lost the class
+    if "terms-sig-wrapper" not in html and "TERMS & CONDITIONS" in html and "AUTHORIZED" in html.upper():
+        pos = html.find("TERMS & CONDITIONS")
+        if pos != -1:
+            look_back = html[:pos]
+            last_div = look_back.rfind("<div")
+            if last_div != -1:
+                tag_end = html.find(">", last_div)
+                if tag_end != -1 and "terms-sig-wrapper" not in html[last_div:tag_end]:
+                    after_div = last_div + 4
+                    insert = ' class="terms-sig-wrapper"'
+                    if html[after_div : after_div + 1] not in (" ", ">"):
+                        insert = " " + insert
+                    html = html[:after_div] + insert + html[after_div:]
+    return html
+
+
 # Unicode subscript/superscript digits often render as black boxes in PDF (font lacks glyphs).
 # Replace with HTML <sub>/<sup> so the engine uses normal digits in subscript/superscript position.
 _SUBSCRIPT_DIGITS = "\u2080\u2081\u2082\u2083\u2084\u2085\u2086\u2087\u2088\u2089"  # ₀₁₂₃₄₅₆₇₈₉
 _SUPERSCRIPT_DIGITS = "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079"  # ⁰¹²³⁴⁵⁶⁷⁸⁹
+
+# Unicode rupee (U+20B9) often renders as a black square in PDF when the font lacks the glyph.
+# Replaced with RUPEE_SYMBOL_FOR_EXPORT in PDF/DOCX. Use "Rs. " to avoid the box; change if you add a font that supports ₹.
+RUPEE_SYMBOL_FOR_EXPORT = "Rs. "
+RUPEESYM = "\u20b9"
+# HTML entities for rupee (in case content was saved as entity)
+RUPEESYM_ENTITY_DEC = "&#8377;"
+RUPEESYM_ENTITY_HEX = "&#x20b9;"
+
+
+def _replace_rupee_for_export(html: str) -> str:
+    """Replace Unicode rupee (and HTML entities) with RUPEE_SYMBOL_FOR_EXPORT so PDF/DOCX show 'Rs.' not a black box."""
+    html = html.replace(RUPEESYM, RUPEE_SYMBOL_FOR_EXPORT)
+    html = html.replace(RUPEESYM_ENTITY_DEC, RUPEE_SYMBOL_FOR_EXPORT)
+    html = html.replace(RUPEESYM_ENTITY_HEX, RUPEE_SYMBOL_FOR_EXPORT)
+    return html
+
+
+def _strip_currency_row_from_quotation(html: str) -> str:
+    """Remove the 'Currency' / 'Currency USD' row from the delivery table if present (user requested no such row)."""
+    # Match delivery-table and remove one <tr>...</tr> whose first <td> contains "Currency"
+    pattern = re.compile(
+        r'(<table[^>]*class="[^"]*delivery-table[^"]*"[^>]*>.*?)'
+        r'<tr[^>]*>\s*<td[^>]*>[^<]*Currency[^<]*</td>.*?</tr>\s*',
+        re.DOTALL | re.IGNORECASE,
+    )
+    return pattern.sub(r"\1", html)
 
 
 def _normalize_unicode_sub_superscript(html: str) -> str:
@@ -95,20 +174,24 @@ def _get_header_footer_css() -> str:
     """
 
 
-def _header_footer_vars(letterhead: Optional[str] = None) -> tuple[str, str, str]:
-    """Return (header_phone, header_web, footer_line) for given letterhead. Dubai vs India."""
+def _header_footer_vars(letterhead: Optional[str] = None) -> tuple[str, str, str, str, str]:
+    """Return (header_phone, header_web, footer_address, footer_mobile, footer_web) for given letterhead. Dubai vs India."""
     letterhead = (letterhead or "").strip().lower()
     if letterhead == "dubai":
         return (
             "Mobile no : 971 525261658",
             "vertexchemical.in",
-            "DSO-IFZA, IFZA Properties, Dubai Silicon Oasis &nbsp;|&nbsp; Mobile no : 971 525261658 &nbsp;|&nbsp; sales@vertexchemical.in",
+            "DSO-IFZA, IFZA Properties, Dubai Silicon Oasis",
+            "Mobile no : 971 525261658",
+            "Web: vertexchemical.in",
         )
     # India (default)
     return (
         "+91 8866335159",
         "vertexchemical.in",
-        "206/5, Signet Hub, Akshar Chowk, Vadodara-390020 &nbsp;|&nbsp; +91 99095 51658 &nbsp;|&nbsp; sales@vertexchemical.in",
+        "206/5, Signet Hub, Akshar Chowk, Vadodara-390020",
+        "+91 99095 51658",
+        "Web: vertexchemical.in",
     )
 
 
@@ -166,7 +249,10 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False, le
     letterhead: "dubai" | "india" | None for chemical header/footer address and phone.
     """
     logger.info(f">>> wrap_html_for_export called, include_header_footer={include_header_footer}, letterhead={letterhead}")
+    body_html = _restore_quotation_format(body_html)
+    body_html = _strip_currency_row_from_quotation(body_html)
     body_html = _normalize_body(body_html)
+    body_html = _replace_rupee_for_export(body_html)
     
     if include_header_footer:
         logger.info(">>> Including header and footer on EVERY page")
@@ -175,7 +261,7 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False, le
         icon_location = _get_logo_base64(_ICON_LOCATION)
         icon_phone = _get_logo_base64(_ICON_PHONE)
         icon_email = _get_logo_base64(_ICON_EMAIL)
-        h_phone, h_web, footer_line = _header_footer_vars(letterhead)
+        h_phone, h_web, footer_address, footer_mobile, footer_web = _header_footer_vars(letterhead)
         
         logger.info(f">>> Header logo loaded: {len(header_logo)} chars")
         logger.info(f">>> Footer logo loaded: {len(footer_logo)} chars")
@@ -204,8 +290,14 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False, le
 <td style="width:45px; padding:2px; vertical-align:middle; border:none !important; background:none !important;">
 <img src="{footer_logo}" width="40"/>
 </td>
-<td style="padding:2px 8px; vertical-align:middle; text-align:left; border:none !important; background:none !important;">
-<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_line}</p>
+<td style="width:33%; padding:2px 6px; vertical-align:middle; text-align:left; border:none !important; background:none !important;">
+<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_address}</p>
+</td>
+<td style="width:34%; padding:2px 6px; vertical-align:middle; text-align:center; border:none !important; background:none !important;">
+<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_mobile}</p>
+</td>
+<td style="width:33%; padding:2px 6px; vertical-align:middle; text-align:right; border:none !important; background:none !important;">
+<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_web}</p>
 </td>
 </tr>
 </table>'''

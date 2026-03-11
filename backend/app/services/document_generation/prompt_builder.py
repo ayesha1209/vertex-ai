@@ -9,6 +9,7 @@ def build_user_prompt(row: RowPreview) -> str:
     """Build prompt with all enquiry fields. Use Excel value when provided; empty → AI generates with smart defaults."""
     quotation_no = (row.quotation_no or "").strip() or generate_quotation_no(row.company_name)
     company_name = (row.company_name or "").strip() or ""
+    local_export = (row.local_export or "").strip() or ""
     return USER_PROMPT_TEMPLATE.format(
         company_name=company_name,
         quotation_no=quotation_no,
@@ -32,4 +33,5 @@ def build_user_prompt(row: RowPreview) -> str:
         incoterm=(row.incoterm or "").strip() or "",
         payment_terms=(row.payment_terms or "").strip() or "",
         remarks=(row.remarks or "").strip() or "",
+        local_export=local_export or "(use Export if country not India else Local)",
     )

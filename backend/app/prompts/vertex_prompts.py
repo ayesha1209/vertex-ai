@@ -63,8 +63,8 @@ DATA & CONTENT RULES (avoid incomplete/unprofessional output)
   - When Unit Price is provided: always calculate Amount = Qty × Unit Price and Total. Fill Amount in Words with the correct currency.
   - When Unit Price is missing: generate a realistic unit price based on the product (name, type, grade), quantity, unit (MT/kg/etc.), and context (export = USD, domestic = INR). Use plausible market-level assumptions (e.g. commodity chemicals in typical USD/MT or ₹/kg ranges). Then calculate Amount and Total and fill Amount in Words so the document looks complete and professional. Do not leave price, amount, or total blank or N/A when quantity is known.
 • Currency (mandatory):
-  - Export: USD only. Use "$" and "USD". Amount in words: "[number] US Dollars Only" or "[number] USD Only". Number format: 1,000.00 (international).
-  - Domestic: INR only. Use "₹" (rupee symbol) and "INR". Amount in words: "[number] Rupees Only" or "Indian Rupees Only". Apply same currency to Unit Price, Amount, Total and Amount in Words.
+  - Export: USD only. Use "$" and "USD". Amount in words: use international number words — Thousand, Million, Billion (e.g. "One Million Two Hundred Fifty Thousand US Dollars Only"). Number format: 1,000.00 (international).
+  - Domestic (INR): Use "₹" (rupee symbol) and "INR". Amount in words: use INDIAN number system ONLY — Lakh, Crore. Never use Million, Billion, or Thousand (in the Western sense) for INR. Examples: "Eighteen Lakh Fifty Thousand Rupees Only", "One Crore Twenty Five Lakh Rupees Only", "Fifty Lakh Rupees Only". End with "Rupees Only" or "Indian Rupees Only". Apply same currency to Unit Price, Amount, Total and Amount in Words.
 • Naming consistency:
   - Use ONE canonical form for supplier/company name in the entire document (e.g. "Vertex Chemical Corporation" or "VERTEX CHEMICALS" as appropriate). Use the same product name in Quotation, TDS, COA, MSDS. Do not alternate between variants.
 • Typos and label accuracy (MANDATORY — avoid before output):
@@ -249,8 +249,8 @@ Port of Loading|[Port of loading]|Bank Name|[Bank Name]
 Port of Discharge|[Port of discharge]|Branch|[Branch]
 Country of Origin|[e.g. INDIA]|IFSC Code|[IFSC Code]
 Terms of Delivery|[Incoterm e.g. FOB/CIF]| |
-Currency|[₹ / USD]| |
 ---TABLE---
+NOTE: Do NOT include a "Currency" or "Currency USD" row in the Delivery table. Omit it entirely.
 
 === SECTION 3: ITEM TABLE (Five Columns with header row) ===
 No.|Description of Goods|Quantity|Unit Price|Unit Amount
@@ -260,7 +260,7 @@ NOTE: Use // as separator in Description - each part will display on separate li
 
 === SECTION 4: TOTAL AMOUNT SECTION (simple rows) ===
 Total Amount|[Sum]
-Amount in Words|[Amount in words e.g. "One Thousand US Dollars Only"]
+Amount in Words|[For INR use Lakh/Crore e.g. "One Crore Twenty Five Lakh Rupees Only"; for USD use "X Million Y Thousand US Dollars Only"]
 NOTE|
 ---TABLE---
 
@@ -282,6 +282,8 @@ TERMS & CONDITIONS:
 13. Claims must be reported within 7 days of receipt of goods.
 14. Seller not liable for delay due to Force Majeure circumstances.
 15. All disputes subject to Gujarat, India jurisdiction.
+AUTHORIZED SIGNATORY
+Place & Date: [Place], [Date]
 ---TERMSBLOCK---
 """
 
@@ -301,17 +303,28 @@ TERMS & CONDITIONS:
 
 SYSTEM_PROMPT = _build_system_prompt()
 
-USER_PROMPT_TEMPLATE = """Data (use if non-empty else generate with smart defaults): Company/Supplier={company_name} QuotationNo={quotation_no} Buyer={buyer_name} Product={product_name} Address={address} Country={country} Email={email_id} Contact={contact_no} Manufacturer={manufacturer_name} Desc={product_description} HSN={hsn_code} CAS={cas_no} Qty={quantity} Unit={unit} Packing={packing} Price={price} FOB/CIF={price_fob_cif} PortLoad={port_of_loading} PortUnload={port_of_unloading} Incoterm={incoterm} Payment={payment_terms} Remarks={remarks}
-Use Company/Supplier as Make and in bank/signatory when Manufacturer is empty. For export use USD and $; for domestic (India) use ₹ (rupee symbol) and INR. When Price is missing, generate a realistic unit price from the product, quantity, unit, and market (export/domestic), then calculate Amount and Total and fill Amount in Words. Always fill pricing and amount in words. Minimize N/A; omit irrelevant COA rows; keep supplier and product names consistent. Ensure: no typos; supplier location matches Country/Address; COA "15 Test Parameters" has exactly 15 rows; MSDS Section 14 transport matches Section 2 hazard; product name wording matches content (e.g. LABSA / Sulphonic Acid → acid form only, never LAS/salt properties).
+USER_PROMPT_TEMPLATE = """Data (use if non-empty else generate with smart defaults): Company/Supplier={company_name} QuotationNo={quotation_no} Buyer={buyer_name} Product={product_name} Address={address} Country={country} Email={email_id} Contact={contact_no} Manufacturer={manufacturer_name} Desc={product_description} HSN={hsn_code} CAS={cas_no} Qty={quantity} Unit={unit} Packing={packing} Price={price} FOB/CIF={price_fob_cif} PortLoad={port_of_loading} PortUnload={port_of_unloading} Incoterm={incoterm} Payment={payment_terms} Remarks={remarks} Local/Export={local_export}
+CURRENCY (from Local/Export column — MANDATORY): If Local/Export=LOCAL (or Local): use ₹ (rupee symbol) and Rs in the quotation — Unit Price, Unit Amount, Total Amount, and Amount in Words must all use ₹ and "Rupees"/"INR". For Amount in Words with INR use INDIAN number system only: Lakh, Crore (e.g. "One Crore Eighty Five Lakh Rupees Only"). Never use Million, Billion or Western "Thousand" for Indian Rupee. If Local/Export=EXPORT (or Export): use $ and USD; Amount in Words with Thousand, Million, etc. (e.g. "Eighteen Million Five Hundred Thousand US Dollars Only"). Do NOT add a "Currency" or "Currency USD" row in the Delivery table. Never mix currencies; never include a Currency row in the quotation.
+Use Company/Supplier as Make and in bank/signatory when Manufacturer is empty. When Price is missing, generate a realistic unit price from the product, quantity, unit, and market (export/domestic per Local/Export above), then calculate Amount and Total and fill Amount in Words. Always fill pricing and amount in words. Minimize N/A; omit irrelevant COA rows; keep supplier and product names consistent. Ensure: no typos; supplier location matches Country/Address; COA "15 Test Parameters" has exactly 15 rows; MSDS Section 14 transport matches Section 2 hazard; product name wording matches content (e.g. LABSA / Sulphonic Acid → acid form only, never LAS/salt properties).
 PORTS (MANDATORY for export): If PortLoad or PortUnload is empty, generate appropriate port names based on supplier location (Port of Loading) and buyer's Country/Address (Port of Discharge). Use major international ports - never leave ports as N/A for export orders.
-MULTIPLE PRODUCTS: If Product field contains comma-separated items (e.g. "Sodium Carbonate, Urea, Calcium Chloride"):
-1. QUOTATION: Create ONE quotation with multiple line items in the items table (use // separator for line breaks):
+MULTIPLE PRODUCTS (MANDATORY): If Product field contains comma-separated items (e.g. "Sodium Carbonate, Urea Fertilizer Grade"):
+- You MUST create ONE quotation with ONE LINE ITEM PER PRODUCT in the items table. Two products = two rows (No. 1 and No. 2). Never put both products in a single row.
+- You MUST then output SEPARATE TDS, COA, MSDS for EACH product with the exact header format " - ProductName" (e.g. " - Sodium Carbonate" and " - Urea Fertilizer Grade"). Two products = two TDS blocks, two COA blocks, two MSDS blocks (6 blocks total after the quotation).
+1. QUOTATION: One line per product:
    No.|Description of Goods|Quantity|Unit Price|Unit Amount
    1|[Product1] // Make: [Mfr] // HSN: [HSN1]|[Qty1] [Unit]|[Price1]|[Amount1]
    2|[Product2] // Make: [Mfr] // HSN: [HSN2]|[Qty2] [Unit]|[Price2]|[Amount2]
-   3|[Product3] // Make: [Mfr] // HSN: [HSN3]|[Qty3] [Unit]|[Price3]|[Amount3]
    Calculate Total Amount = sum of all amounts. Amount in Words for total.
-2. Then output SEPARATE TDS, COA, MSDS for EACH product in order:
+2. QUOTATION must always include SECTION 5: TERMS & CONDITIONS and signatory (same as single-product). After the items table and Total Amount, output:
+   === SECTION 5: TERMS & CONDITIONS ===
+   ---TERMSBLOCK---
+   TERMS & CONDITIONS:
+   1. ... (all 15 numbered terms)
+   15. All disputes subject to Gujarat, India jurisdiction.
+   AUTHORIZED SIGNATORY
+   Place & Date: [Place], [Date]
+   ---TERMSBLOCK---
+   Then output in order, one block per product (repeat for Product2, Product3, etc.):
    # TECHNICAL DATA SHEET (TDS) - Product1
    [full TDS for Product1]
    # CERTIFICATE OF ANALYSIS (COA) - Product1
@@ -320,5 +333,8 @@ MULTIPLE PRODUCTS: If Product field contains comma-separated items (e.g. "Sodium
    [full MSDS for Product1]
    # TECHNICAL DATA SHEET (TDS) - Product2
    [full TDS for Product2]
-   ... and so on for each product.
-Output order: # QUOTATION first, then TDS/COA/MSDS blocks for each product. QUOTATION must be ONE PAGE only: pipe tables only, compact spacing. Copy each REFERENCE structure exactly; only fill [placeholders]. Use --- between subsections for horizontal rules in PDF."""
+   # CERTIFICATE OF ANALYSIS (COA) - Product2
+   [full COA for Product2]
+   # MATERIAL SAFETY DATA SHEET (MSDS) - Product2
+   [full MSDS for Product2]
+Output order: # QUOTATION (including TERMS & CONDITIONS and AUTHORIZED SIGNATORY / Place & Date before ---TERMSBLOCK---), then # TDS, # COA, # MSDS for each product. QUOTATION must be ONE PAGE only: pipe tables only, compact spacing. Use --- between subsections for horizontal rules in PDF."""
