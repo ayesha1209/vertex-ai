@@ -284,38 +284,39 @@ def _header_footer_tables(
     """Build header and footer table HTML. Logo sizes and contact cell tuned to avoid truncation (e.g. website URL)."""
     logger.info(f">>> [EXPORT] _header_footer_tables letterhead={letterhead!r} header_logo_len={len(header_logo)} footer_logo_len={len(footer_logo)}")
     h_phone, h_web, footer_address, footer_mobile, footer_web = _header_footer_vars(letterhead)
-    # Contact column: allow wrap so "vertexchemical.in" is not clipped; fixed logo sizes for WeasyPrint
+    # Contact column: allow wrap so "vertexchemical.in" is not clipped; fixed logo sizes for WeasyPrint.
+    # Use pt for font-size so production (Docker) matches local; compact padding so header fits in 65pt margin box.
     header_table = f'''<table class="hf-table" style="width:100%; border:none !important; border-collapse:collapse; background:none !important; table-layout:fixed;">
 <tr style="border:none !important; background:none !important;">
-<td style="width:60px; padding:2px; vertical-align:middle; border:none !important; background:none !important;">
+<td style="width:60px; padding:1px 2px; vertical-align:middle; border:none !important; background:none !important;">
 <img src="{header_logo}" width="55" height="50" style="max-width:55px; max-height:50px; width:55px; height:50px; display:block; object-fit:contain;"/>
 </td>
-<td style="padding:2px 8px; vertical-align:middle; text-align:left; border:none !important; background:none !important;">
-<b style="font-size:14px; color:#1a5276;">VERTEX CHEMICAL</b><br/>
-<span style="font-size:7px; color:#666;">YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY</span>
+<td style="padding:1px 6px; vertical-align:middle; text-align:left; border:none !important; background:none !important; line-height:1.2;">
+<b style="font-size:11pt; color:#1a5276; line-height:1.2;">VERTEX CHEMICAL</b><br/>
+<span style="font-size:6pt; color:#666; line-height:1.2;">YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY</span>
 </td>
-<td style="width:32%; min-width:140px; padding:2px 8px; vertical-align:middle; text-align:right; border:none !important; border-left:1px solid #999 !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word; white-space:normal;">
-<span style="font-size:8px; color:#333;"><b>Phone:</b> {h_phone}</span><br/>
-<span style="font-size:8px; color:#333;"><b>Web:</b> {h_web}</span>
+<td style="width:32%; min-width:120px; padding:1px 6px; vertical-align:middle; text-align:right; border:none !important; border-left:1px solid #999 !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word; white-space:normal; font-size:7pt; line-height:1.2;">
+<span style="font-size:7pt; color:#333;"><b>Phone:</b> {h_phone}</span><br/>
+<span style="font-size:7pt; color:#333;"><b>Web:</b> {h_web}</span>
 </td>
 </tr>
 </table>
-<hr class="hf-line" style="border:none; border-bottom:2px solid #333; margin:3px 0 0 0; padding:0;"/>'''
+<hr class="hf-line" style="border:none; border-bottom:2px solid #333; margin:1px 0 0 0; padding:0;"/>'''
 
-    footer_table = f'''<hr class="hf-line" style="border:none; border-top:2px solid #333; margin:0 0 3px 0; padding:0;"/>
+    footer_table = f'''<hr class="hf-line" style="border:none; border-top:2px solid #333; margin:0 0 1px 0; padding:0;"/>
 <table class="hf-table" style="width:100%; border:none !important; border-collapse:collapse; background:none !important; table-layout:fixed;">
 <tr style="border:none !important; background:none !important;">
-<td style="width:45px; padding:2px; vertical-align:middle; border:none !important; background:none !important;">
+<td style="width:45px; padding:1px 2px; vertical-align:middle; border:none !important; background:none !important;">
 <img src="{footer_logo}" width="40" height="36" style="max-width:40px; max-height:36px; width:40px; height:36px; display:block; object-fit:contain;"/>
 </td>
-<td style="width:33%; padding:2px 6px; vertical-align:middle; text-align:left; border:none !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word;">
-<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_address}</p>
+<td style="width:33%; padding:1px 4px; vertical-align:middle; text-align:left; border:none !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word;">
+<p style="font-size:6pt; color:#555; margin:0; padding:0; line-height:1.2;">{footer_address}</p>
 </td>
-<td style="width:34%; padding:2px 6px; vertical-align:middle; text-align:center; border:none !important; background:none !important;">
-<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_mobile}</p>
+<td style="width:34%; padding:1px 4px; vertical-align:middle; text-align:center; border:none !important; background:none !important;">
+<p style="font-size:6pt; color:#555; margin:0; padding:0; line-height:1.2;">{footer_mobile}</p>
 </td>
-<td style="width:33%; padding:2px 6px; vertical-align:middle; text-align:right; border:none !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word;">
-<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_web}</p>
+<td style="width:33%; padding:1px 4px; vertical-align:middle; text-align:right; border:none !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word;">
+<p style="font-size:6pt; color:#555; margin:0; padding:0; line-height:1.2;">{footer_web}</p>
 </td>
 </tr>
 </table>'''
@@ -468,6 +469,8 @@ def _build_full_html_for_weasyprint(body_html: str, letterhead: Optional[str] = 
     logger.info(f">>> [EXPORT] WeasyPrint logos: header_len={len(header_logo)} footer_len={len(footer_logo)}")
     header_table, footer_table = _header_footer_tables(letterhead, header_logo, footer_logo)
     css_without_page = re.sub(r'@page\s*\{[^}]*\}', '', EXPORT_PRINT_CSS)
+    # Production-safe: constrain header/footer so they fit in margin boxes (75pt / 55pt).
+    # Without max-height, WeasyPrint can overflow or misalign when font metrics differ (e.g. in Docker).
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -482,21 +485,70 @@ def _build_full_html_for_weasyprint(body_html: str, letterhead: Optional[str] = 
   @top-center {{
     content: element(header);
     vertical-align: top;
+    width: 100%;
   }}
   @bottom-center {{
     content: element(footer);
     vertical-align: bottom;
+    width: 100%;
   }}
 }}
-.run-header {{ position: running(header); }}
-.run-footer {{ position: running(footer); }}
-#header_content, #footer_content, .hf-table, .hf-table tr, .hf-table td {{
+/* Constrain running blocks to margin box so layout is identical in production */
+.run-header {{
+  position: running(header);
+  width: 100%;
+  max-height: 65pt;
+  overflow: hidden;
+  box-sizing: border-box;
+}}
+.run-footer {{
+  position: running(footer);
+  width: 100%;
+  max-height: 45pt;
+  overflow: hidden;
+  box-sizing: border-box;
+}}
+#header_content, #footer_content {{
   border: none !important;
   background: none !important;
   background-color: transparent !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box;
 }}
-.hf-table img {{ max-width: 55px !important; max-height: 50px !important; object-fit: contain; }}
-#footer_content .hf-table img {{ max-width: 40px !important; max-height: 36px !important; }}
+#header_content .hf-table, #footer_content .hf-table,
+#header_content .hf-table tr, #footer_content .hf-table tr,
+#header_content .hf-table td, #footer_content .hf-table td {{
+  border: none !important;
+  background: none !important;
+  background-color: transparent !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}}
+.hf-table {{
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}}
+.hf-table img {{
+  max-width: 55px !important;
+  max-height: 50px !important;
+  width: 55px !important;
+  height: 50px !important;
+  object-fit: contain !important;
+  display: block !important;
+}}
+#footer_content .hf-table img {{
+  max-width: 40px !important;
+  max-height: 36px !important;
+  width: 40px !important;
+  height: 36px !important;
+}}
+.hf-line {{
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}}
 {css_without_page}
 </style>
 </head>
