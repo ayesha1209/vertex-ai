@@ -6,6 +6,7 @@ WORKDIR /app
 
 # WeasyPrint system dependencies (cairo, pango, gdk-pixbuf, etc.)
 # pkg-config + *-dev headers needed so pycairo can build against cairo/pango.
+# Fonts: match print_css.py (DejaVu Sans, Liberation Sans) so PDF layout matches local.
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
@@ -18,6 +19,8 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libgdk-pixbuf2.0-dev \
     libffi-dev \
     shared-mime-info \
+    fonts-dejavu-core \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

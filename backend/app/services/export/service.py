@@ -242,6 +242,60 @@ def _get_footer_html() -> str:
 '''
 
 
+def _prepare_body_for_export(html: str) -> str:
+    """Run all body normalization steps (restore format, strip currency row, normalize, replace rupee). Used for both DOCX/PDF."""
+    body = _restore_quotation_format(html)
+    body = _strip_currency_row_from_quotation(body)
+    body = _normalize_body(body)
+    body = _replace_rupee_for_export(body)
+    return body
+
+
+def _header_footer_tables(
+    letterhead: Optional[str],
+    header_logo: str,
+    footer_logo: str,
+) -> tuple[str, str]:
+    """Build header and footer table HTML. Logo sizes and contact cell tuned to avoid truncation (e.g. website URL)."""
+    h_phone, h_web, footer_address, footer_mobile, footer_web = _header_footer_vars(letterhead)
+    # Contact column: allow wrap so "vertexchemical.in" is not clipped; fixed logo sizes for WeasyPrint
+    header_table = f'''<table class="hf-table" style="width:100%; border:none !important; border-collapse:collapse; background:none !important; table-layout:fixed;">
+<tr style="border:none !important; background:none !important;">
+<td style="width:60px; padding:2px; vertical-align:middle; border:none !important; background:none !important;">
+<img src="{header_logo}" width="55" height="50" style="max-width:55px; max-height:50px; width:55px; height:50px; display:block; object-fit:contain;"/>
+</td>
+<td style="padding:2px 8px; vertical-align:middle; text-align:left; border:none !important; background:none !important;">
+<b style="font-size:14px; color:#1a5276;">VERTEX CHEMICAL</b><br/>
+<span style="font-size:7px; color:#666;">YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY</span>
+</td>
+<td style="width:32%; min-width:140px; padding:2px 8px; vertical-align:middle; text-align:right; border:none !important; border-left:1px solid #999 !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word; white-space:normal;">
+<span style="font-size:8px; color:#333;"><b>Phone:</b> {h_phone}</span><br/>
+<span style="font-size:8px; color:#333;"><b>Web:</b> {h_web}</span>
+</td>
+</tr>
+</table>
+<hr class="hf-line" style="border:none; border-bottom:2px solid #333; margin:3px 0 0 0; padding:0;"/>'''
+
+    footer_table = f'''<hr class="hf-line" style="border:none; border-top:2px solid #333; margin:0 0 3px 0; padding:0;"/>
+<table class="hf-table" style="width:100%; border:none !important; border-collapse:collapse; background:none !important; table-layout:fixed;">
+<tr style="border:none !important; background:none !important;">
+<td style="width:45px; padding:2px; vertical-align:middle; border:none !important; background:none !important;">
+<img src="{footer_logo}" width="40" height="36" style="max-width:40px; max-height:36px; width:40px; height:36px; display:block; object-fit:contain;"/>
+</td>
+<td style="width:33%; padding:2px 6px; vertical-align:middle; text-align:left; border:none !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word;">
+<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_address}</p>
+</td>
+<td style="width:34%; padding:2px 6px; vertical-align:middle; text-align:center; border:none !important; background:none !important;">
+<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_mobile}</p>
+</td>
+<td style="width:33%; padding:2px 6px; vertical-align:middle; text-align:right; border:none !important; background:none !important; word-wrap:break-word; overflow-wrap:break-word;">
+<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_web}</p>
+</td>
+</tr>
+</table>'''
+    return header_table, footer_table
+
+
 def wrap_html_for_export(body_html: str, include_header_footer: bool = False, letterhead: Optional[str] = None) -> str:
     """
     Wrap TipTap/editor HTML in a full document with the export print CSS.
@@ -249,10 +303,7 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False, le
     letterhead: "dubai" | "india" | None for chemical header/footer address and phone.
     """
     logger.info(f">>> wrap_html_for_export called, include_header_footer={include_header_footer}, letterhead={letterhead}")
-    body_html = _restore_quotation_format(body_html)
-    body_html = _strip_currency_row_from_quotation(body_html)
-    body_html = _normalize_body(body_html)
-    body_html = _replace_rupee_for_export(body_html)
+    body_html = _prepare_body_for_export(body_html)
     
     if include_header_footer:
         logger.info(">>> Including header and footer on EVERY page")
@@ -261,47 +312,12 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False, le
         icon_location = _get_logo_base64(_ICON_LOCATION)
         icon_phone = _get_logo_base64(_ICON_PHONE)
         icon_email = _get_logo_base64(_ICON_EMAIL)
-        h_phone, h_web, footer_address, footer_mobile, footer_web = _header_footer_vars(letterhead)
-        
+
         logger.info(f">>> Header logo loaded: {len(header_logo)} chars")
         logger.info(f">>> Footer logo loaded: {len(footer_logo)} chars")
-        
+        header_table, footer_table = _header_footer_tables(letterhead, header_logo, footer_logo)
+
         # xhtml2pdf approach: use @page with static frames
-        header_table = f'''<table class="hf-table" style="width:100%; border:none !important; border-collapse:collapse; background:none !important;">
-<tr style="border:none !important; background:none !important;">
-<td style="width:65px; padding:2px; vertical-align:middle; border:none !important; background:none !important;">
-<img src="{header_logo}" width="55"/>
-</td>
-<td style="padding:2px 8px; vertical-align:middle; text-align:left; border:none !important; background:none !important;">
-<b style="font-size:14px; color:#1a5276;">VERTEX CHEMICAL</b><br/>
-<span style="font-size:7px; color:#666;">YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY</span>
-</td>
-<td style="width:145px; border:none !important; border-left:1px solid #999 !important; padding:2px 2px 2px 10px; vertical-align:middle; text-align:right; background:none !important;">
-<span style="font-size:8px; color:#333;"><b>Phone:</b> {h_phone}</span><br/>
-<span style="font-size:8px; color:#333;"><b>Web:</b> {h_web}</span>
-</td>
-</tr>
-</table>
-<hr class="hf-line" style="border:none; border-bottom:2px solid #333; margin:3px 0 0 0; padding:0;"/>'''
-
-        footer_table = f'''<hr class="hf-line" style="border:none; border-top:2px solid #333; margin:0 0 3px 0; padding:0;"/>
-<table class="hf-table" style="width:100%; border:none !important; border-collapse:collapse; background:none !important;">
-<tr style="border:none !important; background:none !important;">
-<td style="width:45px; padding:2px; vertical-align:middle; border:none !important; background:none !important;">
-<img src="{footer_logo}" width="40"/>
-</td>
-<td style="width:33%; padding:2px 6px; vertical-align:middle; text-align:left; border:none !important; background:none !important;">
-<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_address}</p>
-</td>
-<td style="width:34%; padding:2px 6px; vertical-align:middle; text-align:center; border:none !important; background:none !important;">
-<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_mobile}</p>
-</td>
-<td style="width:33%; padding:2px 6px; vertical-align:middle; text-align:right; border:none !important; background:none !important;">
-<p style="font-size:7px; color:#555; margin:0; padding:0;">{footer_web}</p>
-</td>
-</tr>
-</table>'''
-
         logger.info(">>> Using xhtml2pdf static frame approach")
         
         # xhtml2pdf requires:
@@ -390,6 +406,62 @@ def wrap_html_for_export(body_html: str, include_header_footer: bool = False, le
 </html>"""
 
 
+def _build_full_html_for_weasyprint(body_html: str, letterhead: Optional[str] = None) -> str:
+    """
+    Build full HTML for WeasyPrint with running header/footer so they appear on every page
+    in @page margin boxes (no -pdf-frame-content; WeasyPrint uses position: running()).
+    Avoids header/footer being rendered as large blocks in the main flow.
+    """
+    header_logo = _get_logo_base64(_HEADER_LOGO)
+    footer_logo = _get_logo_base64(_FOOTER_LOGO)
+    header_table, footer_table = _header_footer_tables(letterhead, header_logo, footer_logo)
+    css_without_page = re.sub(r'@page\s*\{[^}]*\}', '', EXPORT_PRINT_CSS)
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<style type="text/css">
+@page {{
+  size: A4 portrait;
+  margin-top: 75pt;
+  margin-bottom: 55pt;
+  margin-left: 50pt;
+  margin-right: 50pt;
+  @top-center {{
+    content: element(header);
+    vertical-align: top;
+  }}
+  @bottom-center {{
+    content: element(footer);
+    vertical-align: bottom;
+  }}
+}}
+.run-header {{ position: running(header); }}
+.run-footer {{ position: running(footer); }}
+#header_content, #footer_content, .hf-table, .hf-table tr, .hf-table td {{
+  border: none !important;
+  background: none !important;
+  background-color: transparent !important;
+}}
+.hf-table img {{ max-width: 55px !important; max-height: 50px !important; object-fit: contain; }}
+#footer_content .hf-table img {{ max-width: 40px !important; max-height: 36px !important; }}
+{css_without_page}
+</style>
+</head>
+<body>
+<div id="header_content" class="run-header">
+{header_table}
+</div>
+<div id="footer_content" class="run-footer">
+{footer_table}
+</div>
+<div class="quotation-page">
+{body_html}
+</div>
+</body>
+</html>"""
+
+
 def _normalize_inline_styles(html: str) -> str:
     """Strip inline font-size, margin, padding so print CSS controls typography and spacing."""
     def reduce_style(m: Match) -> str:
@@ -452,15 +524,17 @@ def html_to_pdf(html: str, letterhead: Optional[str] = None) -> bytes:
     Generate PDF from TipTap HTML. Prefer WeasyPrint; fallback to xhtml2pdf.
     A4, fixed margins, stable tables, page-break control.
     Includes header and footer on every page. letterhead: "dubai" | "india" | None.
+    WeasyPrint uses running header/footer so they appear in margin boxes on every page.
     """
     logger.info(">>> html_to_pdf called, letterhead=%s", letterhead)
-    full_html = wrap_html_for_export(html, include_header_footer=True, letterhead=letterhead)
-    
-    pdf_bytes: Optional[bytes] = _pdf_weasyprint(full_html)
+    body_html = _prepare_body_for_export(html)
+    full_html_weasy = _build_full_html_for_weasyprint(body_html, letterhead)
+    pdf_bytes: Optional[bytes] = _pdf_weasyprint(full_html_weasy)
     if pdf_bytes is not None:
         logger.info(">>> PDF generated using WeasyPrint")
         return pdf_bytes
     logger.info(">>> WeasyPrint failed, using xhtml2pdf")
+    full_html = wrap_html_for_export(html, include_header_footer=True, letterhead=letterhead)
     return _pdf_xhtml2pdf(full_html)
 
 
