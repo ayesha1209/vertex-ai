@@ -111,6 +111,8 @@ Key endpoints:
 
 On Render free tier (no LibreOffice, no system binaries): export uses **pure Python** libraries only. DOCX: html2docx. PDF: WeasyPrint when it installs (best quality); if `pip install weasyprint` fails (e.g. missing cairo/pango), remove `weasyprint` from `requirements.txt` and the app will use the xhtml2pdf fallback automatically.
 
+**Production PDF layout:** If PDFs in production look different from local (multi-page, large logos, spacing), production is likely using xhtml2pdf while local uses WeasyPrint. The code constrains header/footer logo size (55×50px and 40×36px) and uses the same CSS so both engines behave similarly. For best match to local, install WeasyPrint on production (e.g. use a Render native environment or Docker image that includes cairo/pango so `pip install weasyprint` succeeds).
+
 - Build command:
 
 ```bash
