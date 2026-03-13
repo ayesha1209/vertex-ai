@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime as dt
 from queue import Empty, Queue
@@ -46,6 +47,8 @@ def _strip_signatory_from_terms(text: str) -> str:
     return text
 from app.services.export import html_to_pdf
 from app.utils.excel_parser import parse_excel_to_previews
+
+logger = logging.getLogger(__name__)
 
 # In-memory job store: job_id -> {"status": "running"|"done", "queue": Queue, "cancelled": bool}
 _job_store: dict[str, dict[str, Any]] = {}
@@ -606,8 +609,13 @@ async def get_pdf(doc_id: str) -> Response:
 
     html = doc["html_content"]
     letterhead = doc.get("letterhead")
+    local_export = doc.get("local_export")
+    logger.info(
+        "PDF download: doc_id=%s letterhead=%s local_export=%s (export=$ local=Rs)",
+        doc_id, letterhead, local_export,
+    )
     try:
-        pdf_bytes = html_to_pdf(html, letterhead=letterhead)
+        pdf_bytes = html_to_pdf(html, letterhead=letterhead, local_export=local_export)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"PDF generation failed: {e}")
 
