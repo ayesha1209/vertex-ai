@@ -5,13 +5,17 @@ FROM python:3.12-slim-bookworm
 WORKDIR /app
 
 # WeasyPrint system dependencies (cairo, pango, gdk-pixbuf, etc.)
-# Without these, pip install weasyprint fails and production falls back to xhtml2pdf (different layout).
+# pkg-config + *-dev headers needed so pycairo can build against cairo/pango.
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     build-essential \
+    pkg-config \
     libcairo2 \
+    libcairo2-dev \
     libpango-1.0-0 \
+    libpango1.0-dev \
     libpangocairo-1.0-0 \
     libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf2.0-dev \
     libffi-dev \
     shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
