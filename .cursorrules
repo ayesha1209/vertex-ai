@@ -1,0 +1,3 @@
+# Git commits
+- Never add the trailer "Made-with: Cursor" (or any similar Cursor/IDE trailer) to git commits.
+- Do not use `--trailer "Made-with: Cursor"` when committing.
