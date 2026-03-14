@@ -56,8 +56,10 @@ export function VertexEditor({ initialHtml, onChange }: Props) {
     }
   });
 
+  const didInit = useRef(false);
   useEffect(() => {
-    if (editor && initialHtml) {
+    if (editor && initialHtml && !didInit.current) {
+      didInit.current = true;
       try {
         const json = generateJSON(initialHtml, editor.extensionManager.extensions);
         editor.commands.setContent(json, false);

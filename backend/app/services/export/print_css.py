@@ -41,6 +41,12 @@ EXPORT_PRINT_CSS = """
     margin: 6px 0 3px 0 !important;
     line-height: 1.25 !important;
   }
+  .section-heading {
+    font-size: 12px !important;
+    font-weight: bold !important;
+    margin: 8px 0 4px 0 !important;
+    line-height: 1.25 !important;
+  }
   p {
     font-size: 10px !important;
     margin: 2px 0 !important;

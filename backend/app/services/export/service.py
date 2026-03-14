@@ -104,6 +104,27 @@ def _restore_quotation_format(html: str) -> str:
                     if html[after_div : after_div + 1] not in (" ", ">"):
                         insert = " " + insert
                     html = html[:after_div] + insert + html[after_div:]
+    # 4) Restore terms-sig-table on the table that holds items 13-15 + signatory
+    if "terms-sig-table" not in html and "TERMS & CONDITIONS" in html:
+        tc_pos = html.find("TERMS & CONDITIONS")
+        if tc_pos != -1:
+            search_start = tc_pos
+            for tm in re.finditer(r"<table(\s[^>]*)?>", html[search_start:]):
+                abs_start = search_start + tm.start()
+                tag = tm.group(0)
+                if "terms-sig-table" in tag or "items-table" in tag or "totals-table" in tag:
+                    continue
+                tag_end_abs = search_start + tm.end()
+                peek = html[tag_end_abs : tag_end_abs + 600]
+                if "AUTHORIZED" in peek.upper() or "13." in peek:
+                    after = abs_start + 6
+                    insert = ' class="terms-sig-table" style="width:100%;border:none !important;border-collapse:collapse;margin:0;page-break-inside:avoid !important;"'
+                    if "class=" in tag:
+                        break
+                    if html[after : after + 1] not in (" ", ">"):
+                        insert = " " + insert
+                    html = html[:after] + insert + html[after:]
+                    break
     return html
 
 
@@ -318,6 +339,33 @@ def _ensure_dollar_prefix_in_export(html: str) -> str:
     return out
 
 
+def _ensure_rupee_prefix_in_local(html: str) -> str:
+    """
+    For local quotations, replace any stray $ signs before amounts with Rs.
+    Targets totals-table and items-table so regular text is untouched.
+    """
+    out = html
+
+    def _dollar_to_rs_in_table(m: re.Match) -> str:
+        before, body, after = m.group(1), m.group(2), m.group(3)
+        body = re.sub(r"\$\s*(\d)", r"Rs. \1", body)
+        return before + body + after
+
+    out = re.sub(
+        r'(<table[^>]*class="[^"]*totals-table[^"]*"[^>]*>)(.*?)(</table>)',
+        _dollar_to_rs_in_table,
+        out,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    out = re.sub(
+        r'(<table[^>]*class="[^"]*items-table[^"]*"[^>]*>)(.*?)(</table>)',
+        _dollar_to_rs_in_table,
+        out,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    return out
+
+
 def _normalize_currency_for_export(html: str, local_export: Optional[str] = None) -> str:
     """
     Normalize currency symbols for PDF/DOCX export.
@@ -329,7 +377,9 @@ def _normalize_currency_for_export(html: str, local_export: Optional[str] = None
     # Legacy/default: behave like LOCAL (₹ → Rs.)
     if not flag or flag == "local":
         logger.info(f">>> [EXPORT] Currency: local_export={local_export!r} -> using Rs. (local)")
-        return _replace_rupee_for_export(html)
+        out = _replace_rupee_for_export(html)
+        out = _ensure_rupee_prefix_in_local(out)
+        return out
 
     # EXPORT: convert rupee to $ and ensure $ appears where amounts have no symbol.
     logger.info(f">>> [EXPORT] Currency: local_export={local_export!r} -> using $ (export)")

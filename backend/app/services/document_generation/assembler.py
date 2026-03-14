@@ -28,21 +28,21 @@ _TITLE_STRIP_PATTERNS = [
     re.compile(r"^\s*FULL TECHNICAL DATA SHEET\s*\(TDS\)\s*$", re.IGNORECASE | re.MULTILINE),
 ]
 
-# "Section N:" prefix pattern — strip from MSDS/TDS headings
+# "Section N:" prefix — replace with "## " so parser renders as bold, slightly larger subheading
 _SECTION_PREFIX = re.compile(r"^Section\s+\d+\s*:\s*", re.IGNORECASE)
 
 
 def _clean_doc_text(text: str) -> str:
-    """Strip duplicate title lines and 'Section N:' prefixes from TDS/COA/MSDS text before HTML conversion."""
+    """Strip duplicate title lines; convert 'Section N: Title' to '## Title' for bold larger heading."""
     for pat in _TITLE_STRIP_PATTERNS:
         text = pat.sub("", text)
-    # Remove "Section N:" prefix from heading lines (e.g. "Section 1: Identification" -> "Identification")
     lines = text.splitlines()
     cleaned = []
     for line in lines:
         stripped = line.strip()
         if _SECTION_PREFIX.match(stripped):
-            cleaned.append(_SECTION_PREFIX.sub("", stripped))
+            title_only = _SECTION_PREFIX.sub("", stripped)
+            cleaned.append("## " + title_only)
         else:
             cleaned.append(line)
     return "\n".join(cleaned)

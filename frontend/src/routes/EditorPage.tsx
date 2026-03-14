@@ -51,7 +51,9 @@ export function EditorPage() {
     setSuccess(null);
     try {
       const updated = await updateDocument(id, currentHtml);
-      setDoc(updated);
+      setDoc((prev) =>
+        prev ? { ...prev, updated_at: updated.updated_at } : updated
+      );
       setSuccess("Document saved successfully.");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to save document");

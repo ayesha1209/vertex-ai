@@ -34,6 +34,8 @@ _Q_TD_BOLD = f"border:{_B};text-align:left;vertical-align:top;font-weight:bold;"
 _STYLE_HR = "border:none;border-top:1px solid #444;"
 _STYLE_H1 = "font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;"
 _STYLE_H2 = "font-weight:bold;text-transform:uppercase;letter-spacing:0.03em;"
+# Section subheadings (e.g. Identification of the Substance): bold, slightly larger
+_STYLE_H2_SECTION = "font-weight:bold;font-size:12px;letter-spacing:0.02em;margin:8px 0 4px 0;"
 _STYLE_H3 = "font-weight:bold;letter-spacing:0.02em;"
 _STYLE_P = ""
 _STYLE_P_BOLD = "font-weight:bold;"
@@ -576,7 +578,11 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
             continue
 
         # Headings and paragraphs
-        if stripped.startswith("# "):
+        if stripped.startswith("## "):
+            title_text = stripped[3:].strip()
+            html_lines.append(f'<h2 class="section-heading" style="{_STYLE_H2_SECTION}">{escape(title_text)}</h2>')
+            has_content = True
+        elif stripped.startswith("# "):
             title_text = stripped[2:].strip()
             html_lines.append(f'<h1 style="{_STYLE_H1}">{escape(title_text)}</h1>')
             has_content = True
