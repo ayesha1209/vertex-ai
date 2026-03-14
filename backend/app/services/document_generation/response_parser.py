@@ -434,8 +434,6 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
                             terms_lines.append(ln)
                     i += 1
                 
-                logger.info(f">>> Quotation terms: {len(terms_lines)} lines, signature: {len(signature_lines)} lines")
-                
                 # Multi-product: all terms full width, signatory after 15. Single-product: 13–15 left, signatory right.
                 if multi_product:
                     terms_upper = terms_lines

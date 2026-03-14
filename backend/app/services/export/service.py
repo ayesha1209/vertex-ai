@@ -27,23 +27,16 @@ _ICON_EMAIL = _ASSETS_DIR / "mail.png"
 
 def _get_logo_base64(path: Path) -> str:
     """Read logo file and return base64 encoded data URI."""
-    abs_path = path.resolve()
-    logger.info(f">>> [EXPORT] Loading logo path={path!r} resolved={abs_path!r} exists={path.exists()}")
     if not path.exists():
-        logger.warning(f">>> [EXPORT] Logo file NOT FOUND: {path} (cwd={os.getcwd()!r})")
         return ""
     try:
         with open(path, "rb") as f:
             data = f.read()
-        file_size = len(data)
         ext = path.suffix.lower().replace(".", "")
         if ext == "jpg":
             ext = "jpeg"
-        result = f"data:image/{ext};base64,{base64.b64encode(data).decode()}"
-        logger.info(f">>> [EXPORT] Logo loaded path={path.name} file_size={file_size} base64_len={len(result)}")
-        return result
-    except Exception as e:
-        logger.error(f">>> [EXPORT] Error loading logo path={path}: {e}", exc_info=True)
+        return f"data:image/{ext};base64,{base64.b64encode(data).decode()}"
+    except Exception:
         return ""
 
 
@@ -250,8 +243,6 @@ def _normalize_declaration_spacing(html: str) -> str:
 
 def _get_header_footer_css() -> str:
     """Generate CSS for header and footer."""
-    logger.info(">>> Generating header/footer CSS")
-    
     return """
     @page {
         size: A4 portrait;
@@ -284,8 +275,6 @@ def _header_footer_vars(letterhead: Optional[str] = None) -> tuple[str, str, str
 def _get_header_html() -> str:
     """Generate header HTML for PDF using xhtml2pdf pdf:template."""
     header_logo = _get_logo_base64(_HEADER_LOGO)
-    logger.info(f">>> Header logo base64 starts with: {header_logo[:50] if header_logo else 'EMPTY'}...")
-    
     return f'''
 <div id="header_content" style="display:none;">
     <table style="width:100%; border:none; border-collapse:collapse; border-bottom:2px solid #333;">
@@ -310,8 +299,6 @@ def _get_header_html() -> str:
 def _get_footer_html() -> str:
     """Generate footer HTML for PDF using xhtml2pdf pdf:template."""
     footer_logo = _get_logo_base64(_FOOTER_LOGO)
-    logger.info(f">>> Footer logo base64 starts with: {footer_logo[:50] if footer_logo else 'EMPTY'}...")
-    
     return f'''
 <div id="footer_content" style="display:none;">
     <table style="width:100%; border:none; border-collapse:collapse; border-top:3px solid #333;">
@@ -424,8 +411,6 @@ def _force_terms_sig_borders_off(html: str) -> str:
         return html
     end_table += len("</table>")
     chunk = html[tbl_start:end_table]
-
-    logger.info(">>> [EXPORT] _force_terms_sig_borders_off: found table at pos %d, len=%d", tbl_start, len(chunk))
 
     chunk = re.sub(r"<table[^>]*>", lambda m: _inject_table(m.group(0)), chunk, flags=re.IGNORECASE)
     chunk = re.sub(r"<t[dhr][^>]*>", lambda m: _inject_cell(m.group(0)), chunk, flags=re.IGNORECASE)
@@ -588,13 +573,11 @@ def _normalize_currency_for_export(html: str, local_export: Optional[str] = None
     flag = (local_export or "").strip().lower()
     # Legacy/default: behave like LOCAL (₹ → Rs.)
     if not flag or flag == "local":
-        logger.info(f">>> [EXPORT] Currency: local_export={local_export!r} -> using Rs. (local)")
         out = _replace_rupee_for_export(html)
         out = _ensure_rupee_prefix_in_local(out)
         return out
 
     # EXPORT: convert rupee to $ and ensure $ appears where amounts have no symbol.
-    logger.info(f">>> [EXPORT] Currency: local_export={local_export!r} -> using $ (export)")
     out = html.replace(RUPEESYM, "$")
     out = out.replace(RUPEESYM_ENTITY_DEC, "$")
     out = out.replace(RUPEESYM_ENTITY_HEX, "$")
@@ -609,7 +592,6 @@ def _header_footer_tables(
     footer_logo: str,
 ) -> tuple[str, str]:
     """Build header and footer table HTML. Logo sizes and contact cell tuned to avoid truncation (e.g. website URL)."""
-    logger.info(f">>> [EXPORT] _header_footer_tables letterhead={letterhead!r} header_logo_len={len(header_logo)} footer_logo_len={len(footer_logo)}")
     h_phone, h_web, footer_address, footer_mobile, footer_web = _header_footer_vars(letterhead)
     header_table = f'''<table class="hf-table">
 <tr>
@@ -660,37 +642,23 @@ def wrap_html_for_export(
     letterhead: "dubai" | "india" | None for chemical header/footer address and phone.
     prepared_body: if set, use this as body (already normalized + currency applied); skip _prepare_body and rupee replacement.
     """
-    env_info = os.environ.get("ENV", "unknown")
-    logger.info(
-        f">>> [EXPORT] wrap_html_for_export include_header_footer={include_header_footer} letterhead={letterhead!r} "
-        f"prepared_body={prepared_body is not None} env={env_info} cwd={os.getcwd()!r}"
-    )
     if prepared_body is not None:
         body_html = prepared_body
-        logger.info(f">>> [EXPORT] Using prepared_body length={len(body_html)}")
     else:
         body_html = _prepare_body_for_export(body_html)
         # For DOCX and generic HTML export we keep legacy behaviour: treat rupee as Rs.
         body_html = _replace_rupee_for_export(body_html)
-        logger.info(f">>> [EXPORT] Body prepared (no prepared_body) length={len(body_html)}")
 
     if include_header_footer:
-        logger.info(">>> [EXPORT] Including header and footer on EVERY page (xhtml2pdf path)")
         header_logo = _get_logo_base64(_HEADER_LOGO)
         footer_logo = _get_logo_base64(_FOOTER_LOGO)
         icon_location = _get_logo_base64(_ICON_LOCATION)
         icon_phone = _get_logo_base64(_ICON_PHONE)
         icon_email = _get_logo_base64(_ICON_EMAIL)
 
-        logger.info(
-            f">>> [EXPORT] Logos: header_len={len(header_logo)} footer_len={len(footer_logo)} "
-            f"header_empty={not header_logo} footer_empty={not footer_logo}"
-        )
         header_table, footer_table = _header_footer_tables(letterhead, header_logo, footer_logo)
-        logger.info(f">>> [EXPORT] header_table len={len(header_table)} footer_table len={len(footer_table)}")
 
         # xhtml2pdf approach: use @page with static frames
-        logger.info(">>> [EXPORT] Using xhtml2pdf static frame approach")
         
         # xhtml2pdf requires:
         # 1. Static frames with -pdf-frame-content pointing to element IDs
@@ -756,16 +724,6 @@ def wrap_html_for_export(
 {body_html}
 </body>
 </html>"""
-        
-        logger.info(
-            f">>> [EXPORT] Full HTML built: total_len={len(full_html)} body_len={len(body_html)} "
-            f"has_header_content={'header_content' in full_html} has_footer_content={'footer_content' in full_html} "
-            f"has_frame={'@frame' in full_html}"
-        )
-        # Log first 300 chars of style block to verify @page/@frame in production
-        style_start = full_html.find("@page")
-        if style_start != -1:
-            logger.info(f">>> [EXPORT] @page block snippet: ...{full_html[style_start:style_start + 400]!r}...")
         return full_html
     
     return f"""<!DOCTYPE html>
@@ -788,10 +746,8 @@ def _build_full_html_for_weasyprint(body_html: str, letterhead: Optional[str] = 
     in @page margin boxes (no -pdf-frame-content; WeasyPrint uses position: running()).
     Avoids header/footer being rendered as large blocks in the main flow.
     """
-    logger.info(f">>> [EXPORT] _build_full_html_for_weasyprint body_len={len(body_html)} letterhead={letterhead!r}")
     header_logo = _get_logo_base64(_HEADER_LOGO)
     footer_logo = _get_logo_base64(_FOOTER_LOGO)
-    logger.info(f">>> [EXPORT] WeasyPrint logos: header_len={len(header_logo)} footer_len={len(footer_logo)}")
     header_table, footer_table = _header_footer_tables(letterhead, header_logo, footer_logo)
     css_without_page = re.sub(r'@page\s*\{[^}]*\}', '', EXPORT_PRINT_CSS)
     # margin-top 90pt: header takes ~55pt, leaves ~35pt gap before content (matches local).
@@ -993,27 +949,16 @@ def html_to_pdf(html: str, letterhead: Optional[str] = None, local_export: Optio
     letterhead: "dubai" | "india" | None.
     local_export: "local" | "export" for currency normalization (Rs vs $).
     """
-    env_info = os.environ.get("ENV", "unknown")
-    logger.info(
-        f">>> [EXPORT] html_to_pdf entry letterhead={letterhead!r} local_export={local_export!r} "
-        f"env={env_info} input_html_len={len(html)}"
-    )
     body_html = _prepare_body_for_export(html)
-    logger.info(f">>> [EXPORT] After prepare body_html len={len(body_html)}")
     body_html = _normalize_currency_for_export(body_html, local_export)
-    logger.info(f">>> [EXPORT] After currency body_html len={len(body_html)} (export=$ local=Rs)")
 
     full_html_weasy = _build_full_html_for_weasyprint(body_html, letterhead)
-    logger.info(f">>> [EXPORT] WeasyPrint full_html len={len(full_html_weasy)} attempting WeasyPrint...")
     pdf_bytes: Optional[bytes] = _pdf_weasyprint(full_html_weasy)
     if pdf_bytes is not None:
-        logger.info(f">>> [EXPORT] PDF generated using WeasyPrint size={len(pdf_bytes)}")
         return pdf_bytes
-    logger.info(">>> [EXPORT] WeasyPrint failed, falling back to xhtml2pdf (using same body with correct currency)")
     full_html = wrap_html_for_export(
         html, include_header_footer=True, letterhead=letterhead, prepared_body=body_html
     )
-    logger.info(f">>> [EXPORT] xhtml2pdf full_html len={len(full_html)}")
     return _pdf_xhtml2pdf(full_html)
 
 
@@ -1021,31 +966,18 @@ def _pdf_weasyprint(html: str) -> Optional[bytes]:
     """Use WeasyPrint if available (best quality). Returns None on failure."""
     try:
         from weasyprint import HTML
-        logger.info(">>> [EXPORT] WeasyPrint imported successfully")
-
         out = io.BytesIO()
         HTML(string=html).write_pdf(out)
-        result = out.getvalue()
-        logger.info(f">>> [EXPORT] WeasyPrint PDF generated successfully size={len(result)}")
-        return result
-    except Exception as e:
-        logger.warning(
-            f">>> [EXPORT] WeasyPrint failed: type={type(e).__name__} msg={e!r}",
-            exc_info=True,
-        )
+        return out.getvalue()
+    except Exception:
         return None
 
 
 def _pdf_xhtml2pdf(html: str) -> bytes:
     """Fallback: xhtml2pdf (pure Python, no system libs). Works on Render free tier."""
     from xhtml2pdf import pisa
-    logger.info(f">>> [EXPORT] xhtml2pdf input html_len={len(html)} has_header={'header_content' in html} has_footer={'footer_content' in html}")
-
     out = io.BytesIO()
     err = pisa.CreatePDF(html, dest=out, encoding="utf-8")
     if err.err:
-        logger.error(f">>> [EXPORT] xhtml2pdf error: {err.err}")
         raise RuntimeError("PDF generation failed")
-    pdf_size = len(out.getvalue())
-    logger.info(f">>> [EXPORT] xhtml2pdf PDF generated successfully size={pdf_size}")
     return out.getvalue()

@@ -74,7 +74,6 @@ export function VertexEditor({ initialHtml, onChange }: Props) {
   useEffect(() => {
     if (editor && initialHtml && !didInit.current) {
       didInit.current = true;
-      console.log("[VertexEditor] initializing content, length:", initialHtml.length);
       try {
         const json = generateJSON(initialHtml, editor.extensionManager.extensions);
         editor.commands.setContent(json, false);
@@ -83,9 +82,7 @@ export function VertexEditor({ initialHtml, onChange }: Props) {
       }
       // Notify parent of the actual rendered HTML so currentHtml is never stale
       requestAnimationFrame(() => {
-        const renderedHtml = editor.getHTML();
-        console.log("[VertexEditor] post-init HTML length:", renderedHtml.length);
-        onChange(renderedHtml);
+        onChange(editor.getHTML());
       });
     }
   }, [editor, initialHtml, onChange]);

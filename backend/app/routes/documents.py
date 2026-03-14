@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import uuid
 from datetime import datetime as dt
 from queue import Empty, Queue
@@ -49,8 +48,6 @@ def _strip_signatory_from_terms(text: str) -> str:
 from app.services.export import html_to_pdf
 from app.utils.excel_parser import parse_excel_to_previews
 
-logger = logging.getLogger(__name__)
-
 # In-memory job store: job_id -> {"status": "running"|"done", "queue": Queue, "cancelled": bool}
 _job_store: dict[str, dict[str, Any]] = {}
 # Max events to keep per job so late-joining clients get something
@@ -68,17 +65,11 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
     try:
         for row_idx, row in enumerate(rows):
             if store.get("cancelled"):
-                logger.info("Batch job %s cancelled at row %d/%d", job_id, row_idx, total_rows)
                 break
             row_label = f"{getattr(row, 'buyer_name', '?')}/{getattr(row, 'product_name', '?')}"
-            logger.info("Batch %s: generating row %d/%d (%s)", job_id, row_idx + 1, total_rows, row_label)
             try:
                 docs_to_insert = generate_documents_for_row(row)
             except Exception as gen_err:
-                logger.error(
-                    "Batch %s: AI generation FAILED for row %d/%d (%s): %s",
-                    job_id, row_idx + 1, total_rows, row_label, gen_err, exc_info=True,
-                )
                 try:
                     q.put_nowait({"error": f"Generation failed for {row_label}: {gen_err}"})
                 except Exception:
@@ -108,18 +99,10 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                     "payment_terms": getattr(doc, "payment_terms", None),
                     "remarks": getattr(doc, "remarks", None),
                 }
-                logger.info(
-                    "Batch %s: inserting doc_type=%s batch_id=%s buyer=%s product=%s",
-                    job_id, doc.doc_type, mongo_doc.get("batch_id"), doc.buyer_name, doc.product_name,
-                )
                 try:
                     result = documents_collection.insert_one(mongo_doc)
                     inserted = documents_collection.find_one({"_id": result.inserted_id})
                 except Exception as db_err:
-                    logger.error(
-                        "Batch %s: MongoDB insert FAILED for %s/%s: %s",
-                        job_id, doc.doc_type, row_label, db_err, exc_info=True,
-                    )
                     try:
                         q.put_nowait({"error": f"DB insert failed for {doc.doc_type} ({row_label}): {db_err}"})
                     except Exception:
@@ -142,25 +125,12 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                         q.put_nowait(summary.model_dump(mode="json"))
                     except Exception:
                         pass
-                else:
-                    logger.warning("Batch %s: insert_one OK but find_one returned None for %s", job_id, doc.doc_type)
     except Exception as e:
-        logger.error("Batch %s: UNEXPECTED error: %s", job_id, e, exc_info=True)
         try:
             q.put_nowait({"error": f"Batch failed: {e}"})
         except Exception:
             pass
     finally:
-        # Verify: count how many docs with this job's batch_ids actually exist in MongoDB
-        try:
-            verify_count = documents_collection.count_documents({"batch_id": {"$exists": True, "$nin": [None, ""]}})
-            logger.info(
-                "Batch %s: finished. Inserted %d docs from %d rows. "
-                "DB total docs with batch_id: %d",
-                job_id, inserted_count, total_rows, verify_count,
-            )
-        except Exception as ve:
-            logger.error("Batch %s: finished (%d inserted) but verify query failed: %s", job_id, inserted_count, ve)
         store["status"] = "done"
         try:
             q.put_nowait("done")
@@ -569,10 +539,8 @@ async def list_batches(
         {"$limit": min(limit, 100)},
     ]
     try:
-        logger.info("list_batches: query=%s", match_query)
         total_result = list(documents_collection.aggregate(pipeline_count))
         total = total_result[0]["total"] if total_result else 0
-        logger.info("list_batches: total batches=%d", total)
         cursor = documents_collection.aggregate(pipeline_list)
         batches: List[BatchSummary] = []
         for d in cursor:
@@ -596,17 +564,14 @@ async def list_batches(
                     remarks=d.get("remarks"),
                 )
             )
-        logger.info("list_batches: returning %d batches", len(batches))
         return ListBatchesResponse(batches=batches, total=total)
     except PyMongoError as e:
-        logger.error("list_batches: PyMongoError: %s", e, exc_info=True)
         return ListBatchesResponse(
             batches=[],
             total=0,
             warning=f"Database unavailable: {str(e)[:200]}",
         )
     except Exception as e:
-        logger.error("list_batches: unexpected error: %s", e, exc_info=True)
         return ListBatchesResponse(
             batches=[],
             total=0,
@@ -724,13 +689,10 @@ async def update_terms(payload: TermsUpdateRequest) -> TermsResponse:
 
 @router.put("/documents/{doc_id}", response_model=DocumentInDB)
 async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> DocumentInDB:
-    logger.info("[update_document] PUT called doc_id=%s html_len=%s product_name=%r employee_name=%r",
-                doc_id, len(payload.html_content or ""), payload.product_name, payload.employee_name)
     oid: ObjectId
     try:
         oid = to_object_id(doc_id)
     except ValueError:
-        logger.warning("[update_document] Invalid ObjectId: %s", doc_id)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid id")
 
     set_fields: dict = {"html_content": payload.html_content, "updated_at": now_local()}
@@ -739,26 +701,17 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> Docume
     if payload.employee_name is not None:
         set_fields["employee_name"] = payload.employee_name.strip() or None
 
-    doc, which = _find_doc_by_id(oid)
-    logger.info("[update_document] _find_doc_by_id result: which=%r found=%s", which, doc is not None)
+    _, which = _find_doc_by_id(oid)
     if not which:
-        logger.warning("[update_document] doc_id=%s not found in either collection", doc_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     coll = manual_documents_collection if which == "manual_documents" else documents_collection
-    logger.info("[update_document] updating in collection=%s set_fields_keys=%s", which, list(set_fields.keys()))
-    try:
-        res = coll.find_one_and_update(
-            {"_id": oid},
-            {"$set": set_fields},
-            return_document=True,
-        )
-    except Exception as e:
-        logger.exception("[update_document] MongoDB find_one_and_update failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    res = coll.find_one_and_update(
+        {"_id": oid},
+        {"$set": set_fields},
+        return_document=True,
+    )
     if not res:
-        logger.warning("[update_document] find_one_and_update returned None for doc_id=%s", doc_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    logger.info("[update_document] success doc_id=%s", doc_id)
     return _serialize_mongo_doc(res)
 
 
@@ -800,7 +753,7 @@ async def get_pdf(doc_id: str) -> Response:
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid id")
 
-    doc, _ = _find_doc_by_id(oid)
+    doc, which = _find_doc_by_id(oid)
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
@@ -809,34 +762,32 @@ async def get_pdf(doc_id: str) -> Response:
         html = "<p>&nbsp;</p>"
     letterhead = doc.get("letterhead")
     local_export = doc.get("local_export")
-    logger.info(
-        "PDF download: doc_id=%s letterhead=%s local_export=%s html_len=%s (export=$ local=Rs)",
-        doc_id, letterhead, local_export, len(html),
-    )
     try:
         pdf_bytes = html_to_pdf(html, letterhead=letterhead, local_export=local_export)
     except Exception as e:
-        logger.exception("PDF generation failed for doc_id=%s", doc_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"PDF generation failed: {e}")
 
-    buyer = _sanitize_filename(doc.get("buyer_name", "") or "Document")
     product = _sanitize_filename(doc.get("product_name", "") or "Document")
-    doc_type = doc.get("doc_type", "document")
 
-    if doc_type == "quotation":
-        qno_raw = doc.get("quotation_no") or _extract_quotation_no_from_html(html) or "Q"
-        qno = _sanitize_filename(qno_raw, 30)
-        company = _sanitize_filename(doc.get("company_name") or "Company", 30)
-        filename = f"QF_{qno}_{company}_{buyer}_{product}.pdf"
-    elif doc_type == "tds":
-        filename = f"TDS_{product}.pdf"
-    elif doc_type == "coa":
-        filename = f"COA_{product}.pdf"
-    elif doc_type == "msds":
-        filename = f"MSDS_{product}.pdf"
+    if which == "manual_documents":
+        filename = f"{product}.pdf"
     else:
-        date_str = datetime.now().strftime("%d%m%Y")
-        filename = f"{buyer}_{product}_{date_str}.pdf"
+        buyer = _sanitize_filename(doc.get("buyer_name", "") or "Document")
+        doc_type = doc.get("doc_type", "document")
+        if doc_type == "quotation":
+            qno_raw = doc.get("quotation_no") or _extract_quotation_no_from_html(html) or "Q"
+            qno = _sanitize_filename(qno_raw, 30)
+            company = _sanitize_filename(doc.get("company_name") or "Company", 30)
+            filename = f"QF_{qno}_{company}_{buyer}_{product}.pdf"
+        elif doc_type == "tds":
+            filename = f"TDS_{product}.pdf"
+        elif doc_type == "coa":
+            filename = f"COA_{product}.pdf"
+        elif doc_type == "msds":
+            filename = f"MSDS_{product}.pdf"
+        else:
+            date_str = datetime.now().strftime("%d%m%Y")
+            filename = f"{buyer}_{product}_{date_str}.pdf"
 
     return Response(
         content=pdf_bytes,
