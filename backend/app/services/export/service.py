@@ -348,41 +348,58 @@ def _normalize_quotation_spacing(html: str) -> str:
 
 
 def _force_terms_sig_borders_off(html: str) -> str:
-    """Inject inline border:none on every <td>, <tr>, and <table> inside a terms-sig-table.
-    Needed because xhtml2pdf ignores CSS specificity; inline !important is the only reliable way."""
-    m = re.search(r'<table[^>]*class="[^"]*terms-sig-table[^"]*"', html, re.IGNORECASE)
-    if not m:
+    """Force border:none on the terms/signatory table (13-15 + AUTHORIZED SIGNATORY).
+    Finds the table by CONTENT (not class) so it works even if class restoration failed.
+    Strips any existing border properties and injects border:none !important on every element."""
+    _NOBORDER = "border:none !important;border-width:0 !important;border-style:none !important;"
+
+    def _strip_and_inject(tag: str) -> str:
+        if 'style="' in tag:
+            style_m = re.search(r'style="([^"]*)"', tag)
+            if style_m:
+                style_val = style_m.group(1)
+                style_val = re.sub(
+                    r"\s*border(?:-width|-style|-color|-collapse)?\s*:\s*[^;]+;?",
+                    "", style_val, flags=re.IGNORECASE,
+                ).strip().strip(";")
+                new_style = _NOBORDER + ((";" + style_val) if style_val else "")
+                return re.sub(r'style="[^"]*"', f'style="{new_style}"', tag, count=1)
+        return tag[:-1] + f' style="{_NOBORDER}">'
+
+    # Strategy 1: find by class
+    tbl_match = re.search(r'<table[^>]*class="[^"]*terms-sig-table[^"]*"', html, re.IGNORECASE)
+    # Strategy 2: find by content — first table after "TERMS & CONDITIONS" that contains "AUTHORIZED" or "13."
+    if not tbl_match and "TERMS & CONDITIONS" in html:
+        tc_pos = html.find("TERMS & CONDITIONS")
+        for tm in re.finditer(r"<table[^>]*>", html[tc_pos:]):
+            abs_start = tc_pos + tm.start()
+            tag = tm.group(0)
+            if "items-table" in tag or "totals-table" in tag or "customer-table" in tag or "delivery-table" in tag:
+                continue
+            end_tbl = html.find("</table>", abs_start)
+            if end_tbl == -1:
+                continue
+            peek = html[abs_start : end_tbl]
+            if "AUTHORIZED" in peek.upper() or "13." in peek:
+                tbl_match = tm
+                # Adjust so .start() is absolute
+                class FakeMatch:
+                    def start(self):
+                        return abs_start
+                tbl_match = FakeMatch()
+                break
+    if not tbl_match:
         return html
-    start = m.start()
+
+    start = tbl_match.start()
     end_table = html.find("</table>", start)
     if end_table == -1:
         return html
     end_table += len("</table>")
     chunk = html[start:end_table]
 
-    _NOBORDER = "border:none !important;border-width:0 !important;border-style:none !important;"
-
-    def _inject_border(tag_match: re.Match) -> str:
-        tag = tag_match.group(0)
-        if 'style="' in tag:
-            style_m = re.search(r'\s*style="([^"]*)"', tag)
-            if style_m:
-                style_val = style_m.group(1)
-                # Strip any border so our !important wins (TipTap often adds border to td/tr/table)
-                style_val = re.sub(
-                    r"\s*border(?:-width|-style|-color)?\s*:\s*[^;]+;?",
-                    "",
-                    style_val,
-                    flags=re.IGNORECASE,
-                ).strip().strip(";")
-                new_style = _NOBORDER + ((";" + style_val) if style_val else "")
-                new_tag = re.sub(r'\s*style="[^"]*"', f' style="{new_style}"', tag, count=1)
-                return new_tag
-            return tag.replace('style="', f'style="{_NOBORDER}')
-        return tag[:-1] + f' style="{_NOBORDER}">'
-
-    chunk = re.sub(r"<t[dhr][^>]*>", _inject_border, chunk, flags=re.IGNORECASE)
-    chunk = re.sub(r"<table[^>]*>", _inject_border, chunk, flags=re.IGNORECASE)
+    chunk = re.sub(r"<table[^>]*>", lambda m: _strip_and_inject(m.group(0)), chunk, flags=re.IGNORECASE)
+    chunk = re.sub(r"<t[dhr][^>]*>", lambda m: _strip_and_inject(m.group(0)), chunk, flags=re.IGNORECASE)
     return html[:start] + chunk + html[end_table:]
 
 
@@ -893,11 +910,32 @@ def _normalize_body(html: str) -> str:
         html,
         flags=re.IGNORECASE,
     )
+    # Find position of the terms-sig table so we can skip adding borders to it
+    _terms_sig_tbl_start = -1
+    if "TERMS & CONDITIONS" in html:
+        _tc = html.find("TERMS & CONDITIONS")
+        for _tm in re.finditer(r"<table[^>]*>", html[_tc:]):
+            _abs = _tc + _tm.start()
+            _tag = _tm.group(0)
+            if "items-table" in _tag or "totals-table" in _tag or "customer-table" in _tag or "delivery-table" in _tag:
+                continue
+            _etbl = html.find("</table>", _abs)
+            if _etbl == -1:
+                continue
+            _peek = html[_abs:_etbl]
+            if "AUTHORIZED" in _peek.upper() or "13." in _peek:
+                _terms_sig_tbl_start = _abs
+                break
+
     def _table_repl(m: Match) -> str:
         rest = (m.group(1) or "").strip()
         if "style=" in rest:
             return m.group(0)
-        # Preserve class attribute if present
+        if "terms-sig-table" in rest:
+            return m.group(0)
+        # Skip the terms/signatory table
+        if _terms_sig_tbl_start >= 0 and m.start() == _terms_sig_tbl_start:
+            return m.group(0)
         if rest:
             return f'<table {rest} style="{_TABLE_INLINE}">'.replace("  ", " ").strip()
         return f'<table style="{_TABLE_INLINE}">'
