@@ -66,4 +66,11 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
         quotation_no=quotation_no,
         company_name=row.company_name,
         local_export=row.local_export,
+        quantity=row.quantity,
+        unit=row.unit,
+        country=row.country or row.unloading_country,
+        port=row.port or row.port_of_loading or row.port_of_unloading,
+        incoterm=row.incoterm or row.price_fob_cif,
+        payment_terms=row.payment_terms,
+        remarks=row.remarks,
     )

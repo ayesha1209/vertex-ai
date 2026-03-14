@@ -94,6 +94,14 @@ class DocumentBase(BaseModel):
     quotation_no: Optional[str] = None
     company_name: Optional[str] = None
     local_export: Optional[str] = None  # "local" | "export" for currency (Rs vs $)
+    # Row fields used for "View details" (from enquiry row at generation time)
+    quantity: Optional[str] = None
+    unit: Optional[str] = None
+    country: Optional[str] = None
+    port: Optional[str] = None
+    incoterm: Optional[str] = None
+    payment_terms: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class DocumentCreate(DocumentBase):
@@ -125,13 +133,23 @@ class ListDocumentsResponse(BaseModel):
 
 
 class BatchSummary(BaseModel):
-    """One row per batch for dashboard: buyer, product, entered by, date, time."""
+    """One row per batch for dashboard; includes fields used for generation (View details)."""
     batch_id: str
     buyer_name: str
     product_name: str
     product_type: str  # "chemical" | "engineering"
     employee_name: Optional[str] = None
     created_at: datetime
+    letterhead: Optional[str] = None
+    local_export: Optional[str] = None
+    company_name: Optional[str] = None
+    quantity: Optional[str] = None
+    unit: Optional[str] = None
+    country: Optional[str] = None
+    port: Optional[str] = None
+    incoterm: Optional[str] = None
+    payment_terms: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class ListBatchesResponse(BaseModel):

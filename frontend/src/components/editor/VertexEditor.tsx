@@ -49,8 +49,22 @@ export function VertexEditor({ initialHtml, onChange }: Props) {
         const current = ed.getHTML();
         const updated = recalcQuotationTotals(current);
         if (updated !== current) {
+          const windowScrollY = typeof window !== "undefined" ? window.scrollY : 0;
+          let scrollable: Element | null = ed.view.dom.parentElement;
+          let savedScrollTop: number | null = null;
+          while (scrollable) {
+            if (scrollable.scrollHeight > scrollable.clientHeight) {
+              savedScrollTop = scrollable.scrollTop;
+              break;
+            }
+            scrollable = scrollable.parentElement;
+          }
           ed.commands.setContent(updated, false);
           onChange(updated);
+          requestAnimationFrame(() => {
+            if (typeof window !== "undefined") window.scrollTo(window.scrollX, windowScrollY);
+            if (scrollable && savedScrollTop !== null) scrollable.scrollTop = savedScrollTop;
+          });
         }
       }, RECALC_DEBOUNCE_MS);
     }

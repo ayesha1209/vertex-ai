@@ -99,6 +99,13 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                     "quotation_no": getattr(doc, "quotation_no", None),
                     "company_name": getattr(doc, "company_name", None),
                     "local_export": getattr(doc, "local_export", None),
+                    "quantity": getattr(doc, "quantity", None),
+                    "unit": getattr(doc, "unit", None),
+                    "country": getattr(doc, "country", None),
+                    "port": getattr(doc, "port", None),
+                    "incoterm": getattr(doc, "incoterm", None),
+                    "payment_terms": getattr(doc, "payment_terms", None),
+                    "remarks": getattr(doc, "remarks", None),
                 }
                 logger.info(
                     "Batch %s: inserting doc_type=%s batch_id=%s buyer=%s product=%s",
@@ -179,6 +186,13 @@ def _serialize_mongo_doc(doc: Any) -> DocumentInDB:
         quotation_no=doc.get("quotation_no"),
         company_name=doc.get("company_name"),
         local_export=doc.get("local_export"),
+        quantity=doc.get("quantity"),
+        unit=doc.get("unit"),
+        country=doc.get("country"),
+        port=doc.get("port"),
+        incoterm=doc.get("incoterm"),
+        payment_terms=doc.get("payment_terms"),
+        remarks=doc.get("remarks"),
     )
 
 
@@ -285,6 +299,13 @@ async def generate_row(payload: GenerateRowRequest) -> GenerateRowResponse:
                 "quotation_no": getattr(doc, "quotation_no", None),
                 "company_name": getattr(doc, "company_name", None),
                 "local_export": getattr(doc, "local_export", None),
+                "quantity": getattr(doc, "quantity", None),
+                "unit": getattr(doc, "unit", None),
+                "country": getattr(doc, "country", None),
+                "port": getattr(doc, "port", None),
+                "incoterm": getattr(doc, "incoterm", None),
+                "payment_terms": getattr(doc, "payment_terms", None),
+                "remarks": getattr(doc, "remarks", None),
             }
         )
 
@@ -450,6 +471,16 @@ async def list_batches(
             "product_type": {"$first": "$product_type"},
             "employee_name": {"$first": "$employee_name"},
             "created_at": {"$first": "$created_at"},
+            "letterhead": {"$first": "$letterhead"},
+            "local_export": {"$first": "$local_export"},
+            "company_name": {"$first": "$company_name"},
+            "quantity": {"$first": "$quantity"},
+            "unit": {"$first": "$unit"},
+            "country": {"$first": "$country"},
+            "port": {"$first": "$port"},
+            "incoterm": {"$first": "$incoterm"},
+            "payment_terms": {"$first": "$payment_terms"},
+            "remarks": {"$first": "$remarks"},
         }},
         {"$sort": {"created_at": -1}},
         {"$skip": skip},
@@ -471,6 +502,16 @@ async def list_batches(
                     product_type=d.get("product_type") or "chemical",
                     employee_name=d.get("employee_name"),
                     created_at=d.get("created_at") or dt.now(),
+                    letterhead=d.get("letterhead"),
+                    local_export=d.get("local_export"),
+                    company_name=d.get("company_name"),
+                    quantity=d.get("quantity"),
+                    unit=d.get("unit"),
+                    country=d.get("country"),
+                    port=d.get("port"),
+                    incoterm=d.get("incoterm"),
+                    payment_terms=d.get("payment_terms"),
+                    remarks=d.get("remarks"),
                 )
             )
         logger.info("list_batches: returning %d batches", len(batches))

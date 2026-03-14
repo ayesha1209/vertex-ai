@@ -211,6 +211,13 @@ def assemble_separate_documents(
     quotation_no: str | None = None,
     company_name: str | None = None,
     local_export: str | None = None,
+    quantity: str | None = None,
+    unit: str | None = None,
+    country: str | None = None,
+    port: str | None = None,
+    incoterm: str | None = None,
+    payment_terms: str | None = None,
+    remarks: str | None = None,
 ) -> list[DocumentCreate]:
     """Build four separate documents: Quotation, TDS, COA, MSDS. Terms are only in Quotation (from AI output, not appended)."""
     # Quotation: do not append terms here — the AI-generated quotation already includes TERMS & CONDITIONS once (from prompt).
@@ -234,6 +241,13 @@ def assemble_separate_documents(
         "employee_name": employee_name,
         "letterhead": letterhead_val if letterhead_val in ("dubai", "india") else None,
         "local_export": local_export_val,
+        "quantity": quantity,
+        "unit": unit,
+        "country": country,
+        "port": port,
+        "incoterm": incoterm,
+        "payment_terms": payment_terms,
+        "remarks": remarks,
     }
 
     # One Quotation (covers all products)

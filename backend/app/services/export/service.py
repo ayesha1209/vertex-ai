@@ -141,26 +141,51 @@ def _restore_quotation_format(html: str) -> str:
                     if html[after_div : after_div + 1] not in (" ", ">"):
                         insert = " " + insert
                     html = html[:after_div] + insert + html[after_div:]
-    # 4) Restore terms-sig-table on the table that holds items 13-15 + signatory
-    if "terms-sig-table" not in html and "TERMS & CONDITIONS" in html:
+    # 4) Ensure terms-sig-table class (and borderless style) on the table that holds 13-15 + signatory.
+    # After edit, TipTap may output <table class="..."> so we must merge in terms-sig-table, not skip.
+    if "TERMS & CONDITIONS" in html:
         tc_pos = html.find("TERMS & CONDITIONS")
         if tc_pos != -1:
             search_start = tc_pos
             for tm in re.finditer(r"<table(\s[^>]*)?>", html[search_start:]):
                 abs_start = search_start + tm.start()
                 tag = tm.group(0)
-                if "terms-sig-table" in tag or "items-table" in tag or "totals-table" in tag:
+                if "items-table" in tag or "totals-table" in tag:
                     continue
                 tag_end_abs = search_start + tm.end()
                 peek = html[tag_end_abs : tag_end_abs + 600]
                 if "AUTHORIZED" in peek.upper() or "13." in peek:
-                    after = abs_start + 6
-                    insert = ' class="terms-sig-table" style="width:100%;border:none !important;border-collapse:collapse;margin:0;page-break-inside:avoid !important;"'
-                    if "class=" in tag:
+                    rest = (tm.group(1) or "").strip()
+                    if "terms-sig-table" in tag:
+                        # Already has class; ensure inline border-none is on the table
+                        if "border:none" not in tag and "border: none" not in tag:
+                            style_attr = ' style="width:100%;border:none !important;border-collapse:collapse;margin:0;page-break-inside:avoid !important;"'
+                            if ' style="' in tag:
+                                html = html[:abs_start] + tag.replace(' style="', style_attr + ' style="') + html[tag_end_abs:]
+                            else:
+                                html = html[:tag_end_abs] + style_attr + html[tag_end_abs:]
                         break
-                    if html[after : after + 1] not in (" ", ">"):
-                        insert = " " + insert
-                    html = html[:after] + insert + html[after:]
+                    # Add or merge class and style
+                    borderless_style = 'style="width:100%;border:none !important;border-collapse:collapse;margin:0;page-break-inside:avoid !important;"'
+                    if "class=" in tag:
+                        # Merge terms-sig-table into existing class
+                        new_tag = re.sub(
+                            r'\bclass="([^"]*)"',
+                            lambda m: 'class="' + m.group(1).strip() + ' terms-sig-table"' if "terms-sig-table" not in m.group(1) else m.group(0),
+                            tag,
+                            count=1,
+                        )
+                        if "border:none" not in new_tag and "border: none" not in new_tag:
+                            if ' style="' in new_tag:
+                                new_tag = re.sub(r'\s*style="[^"]*"', " " + borderless_style, new_tag, count=1)
+                            else:
+                                new_tag = new_tag[:-1] + " " + borderless_style + ">"
+                        html = html[:abs_start] + new_tag + html[tag_end_abs:]
+                    else:
+                        insert = ' class="terms-sig-table" ' + borderless_style
+                        if html[abs_start + 6 : abs_start + 7] not in (" ", ">"):
+                            insert = " " + insert
+                        html = html[: abs_start + 6] + insert + html[tag_end_abs:]
                     break
     return html
 
@@ -335,13 +360,24 @@ def _force_terms_sig_borders_off(html: str) -> str:
     end_table += len("</table>")
     chunk = html[start:end_table]
 
-    _NOBORDER = "border:none !important;border-width:0 !important;"
+    _NOBORDER = "border:none !important;border-width:0 !important;border-style:none !important;"
 
     def _inject_border(tag_match: re.Match) -> str:
         tag = tag_match.group(0)
-        if "border" in tag:
-            return tag
         if 'style="' in tag:
+            style_m = re.search(r'\s*style="([^"]*)"', tag)
+            if style_m:
+                style_val = style_m.group(1)
+                # Strip any border so our !important wins (TipTap often adds border to td/tr/table)
+                style_val = re.sub(
+                    r"\s*border(?:-width|-style|-color)?\s*:\s*[^;]+;?",
+                    "",
+                    style_val,
+                    flags=re.IGNORECASE,
+                ).strip().strip(";")
+                new_style = _NOBORDER + ((";" + style_val) if style_val else "")
+                new_tag = re.sub(r'\s*style="[^"]*"', f' style="{new_style}"', tag, count=1)
+                return new_tag
             return tag.replace('style="', f'style="{_NOBORDER}')
         return tag[:-1] + f' style="{_NOBORDER}">'
 

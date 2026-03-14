@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { BatchSummary } from "../../lib/types";
 
@@ -13,6 +13,26 @@ function parseUtc(dateStr: string): Date {
 function formatTime(dateStr: string): string {
   return parseUtc(dateStr).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
 }
+
+function formatDate(dateStr: string): string {
+  return parseUtc(dateStr).toLocaleDateString(undefined, { dateStyle: "short" });
+}
+
+const DETAIL_LABELS: { key: keyof BatchSummary; label: string }[] = [
+  { key: "buyer_name", label: "Buyer" },
+  { key: "product_name", label: "Product" },
+  { key: "employee_name", label: "Entered by" },
+  { key: "letterhead", label: "Letterhead" },
+  { key: "local_export", label: "Local/Export" },
+  { key: "company_name", label: "Company" },
+  { key: "quantity", label: "Qty" },
+  { key: "unit", label: "Unit" },
+  { key: "country", label: "Country" },
+  { key: "port", label: "Port" },
+  { key: "incoterm", label: "Incoterm" },
+  { key: "payment_terms", label: "Payment" },
+  { key: "remarks", label: "Remarks" },
+];
 
 interface BatchTableProps {
   batches: BatchSummary[];
@@ -32,6 +52,7 @@ export function BatchTable({
   onDelete,
 }: BatchTableProps) {
   const navigate = useNavigate();
+  const [detailsBatch, setDetailsBatch] = useState<BatchSummary | null>(null);
   const allSelected = batches.length > 0 && batches.every((b) => selectedBatchIds.has(b.batch_id));
   const someSelected = selectedBatchIds.size > 0;
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -45,7 +66,13 @@ export function BatchTable({
     onDelete?.(batchId);
   };
 
+  const handleViewDetails = (e: React.MouseEvent, batch: BatchSummary) => {
+    e.stopPropagation();
+    setDetailsBatch(batch);
+  };
+
   return (
+    <>
     <div className="card overflow-hidden">
       {loading ? (
         <div
@@ -158,6 +185,13 @@ export function BatchTable({
                         >
                           View
                         </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleViewDetails(e, batch)}
+                          className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300"
+                        >
+                          View details
+                        </button>
                         {onDelete && (
                           <button
                             type="button"
@@ -177,5 +211,54 @@ export function BatchTable({
         </div>
       )}
     </div>
+
+    {detailsBatch && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="batch-details-title"
+        onClick={() => setDetailsBatch(null)}
+      >
+        <div
+          className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-xl bg-white p-6 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 id="batch-details-title" className="mb-4 text-lg font-semibold text-slate-800">
+            Batch details
+          </h2>
+          <dl className="space-y-2 text-sm">
+            <div className="flex gap-3">
+              <dt className="w-28 shrink-0 font-medium text-slate-500">Date</dt>
+              <dd className="text-slate-800">{formatDate(detailsBatch.created_at)}</dd>
+            </div>
+            <div className="flex gap-3">
+              <dt className="w-28 shrink-0 font-medium text-slate-500">Time</dt>
+              <dd className="text-slate-800">{formatTime(detailsBatch.created_at)}</dd>
+            </div>
+            {DETAIL_LABELS.map(({ key, label }) => {
+              const val = detailsBatch[key];
+              const display = key === "buyer_name" || key === "product_name" ? (val ?? "—") : (val ?? "—");
+              return (
+                <div key={key} className="flex gap-3">
+                  <dt className="w-28 shrink-0 font-medium text-slate-500">{label}</dt>
+                  <dd className="min-w-0 break-words text-slate-800">{display}</dd>
+                </div>
+              );
+            })}
+          </dl>
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setDetailsBatch(null)}
+              className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

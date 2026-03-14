@@ -72,6 +72,16 @@ export interface BatchSummary {
   product_type: ProductType;
   employee_name?: string | null;
   created_at: string;
+  letterhead?: string | null;
+  local_export?: string | null;
+  company_name?: string | null;
+  quantity?: string | null;
+  unit?: string | null;
+  country?: string | null;
+  port?: string | null;
+  incoterm?: string | null;
+  payment_terms?: string | null;
+  remarks?: string | null;
 }
 
 export interface ListBatchesResponse {
