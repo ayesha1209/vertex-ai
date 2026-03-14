@@ -100,6 +100,10 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                     "company_name": getattr(doc, "company_name", None),
                     "local_export": getattr(doc, "local_export", None),
                 }
+                logger.info(
+                    "Batch %s: inserting doc_type=%s batch_id=%s buyer=%s product=%s",
+                    job_id, doc.doc_type, mongo_doc.get("batch_id"), doc.buyer_name, doc.product_name,
+                )
                 try:
                     result = documents_collection.insert_one(mongo_doc)
                     inserted = documents_collection.find_one({"_id": result.inserted_id})
@@ -139,7 +143,16 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
         except Exception:
             pass
     finally:
-        logger.info("Batch %s: finished. Inserted %d documents from %d rows.", job_id, inserted_count, total_rows)
+        # Verify: count how many docs with this job's batch_ids actually exist in MongoDB
+        try:
+            verify_count = documents_collection.count_documents({"batch_id": {"$exists": True, "$nin": [None, ""]}})
+            logger.info(
+                "Batch %s: finished. Inserted %d docs from %d rows. "
+                "DB total docs with batch_id: %d",
+                job_id, inserted_count, total_rows, verify_count,
+            )
+        except Exception as ve:
+            logger.error("Batch %s: finished (%d inserted) but verify query failed: %s", job_id, inserted_count, ve)
         store["status"] = "done"
         try:
             q.put_nowait("done")
