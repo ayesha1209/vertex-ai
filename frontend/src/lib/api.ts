@@ -233,36 +233,21 @@ export async function createManualDocument(payload: {
   return res.json();
 }
 
-/** Save document as PDF file (opens save dialog). */
+/** Save document as PDF file (triggers browser download). */
 export async function savePdf(id: string): Promise<void> {
-  const res = await fetch(
-    `${API_BASE_URL}/documents/${encodeURIComponent(id)}/pdf`
-  );
-  if (!res.ok) {
-    throw new Error("Failed to get PDF");
-  }
-  const blob = await res.blob();
-  const disposition = res.headers.get("Content-Disposition");
-  let filename = "document.pdf";
-  if (disposition) {
-    const match = disposition.match(/filename="(.+?)"/i);
-    if (match?.[1]) {
-      filename = match[1];
-    }
-  }
-  const url = window.URL.createObjectURL(blob);
+  const pdfUrl = `${API_BASE_URL}/documents/${encodeURIComponent(id)}/pdf`;
+
+  // Direct link to the PDF endpoint. The backend sets
+  // Content-Disposition: attachment, so the browser downloads instead of
+  // navigating. This bypasses all blob/createObjectURL reliability issues.
   const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
+  a.href = pdfUrl;
+  a.target = "_blank";
+  a.rel = "noopener";
   a.style.display = "none";
-  a.setAttribute("download", filename);
   document.body.appendChild(a);
   a.click();
-  // Delay revoke so the browser has time to open Save As / start download
-  setTimeout(() => {
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  }, 200);
+  setTimeout(() => document.body.removeChild(a), 100);
 }
 
 /** Save multiple documents as PDFs (one after another, with short delay). */

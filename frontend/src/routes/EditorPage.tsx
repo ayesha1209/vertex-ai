@@ -18,7 +18,6 @@ export function EditorPage() {
   const [currentHtml, setCurrentHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -28,14 +27,9 @@ export function EditorPage() {
   const [createdBy, setCreatedBy] = useState("");
   const pendingSaveRef = useRef(false);
 
-  const handleDownloadPdf = async () => {
-    if (!doc || downloadingPdf) return;
-    setDownloadingPdf(true);
-    try {
-      await savePdf(doc.id);
-    } finally {
-      setDownloadingPdf(false);
-    }
+  const handleDownloadPdf = () => {
+    if (!doc) return;
+    savePdf(doc.id);
   };
 
   useEffect(() => {
@@ -57,33 +51,51 @@ export function EditorPage() {
   }, [id]);
 
   const doSave = async (meta?: { product_name?: string; employee_name?: string }) => {
-    if (!id || currentHtml == null) return;
+    console.log("[EditorPage] doSave called — id:", id, "currentHtml length:", currentHtml?.length ?? "null", "meta:", meta);
+    if (!id) {
+      console.error("[EditorPage] doSave: no id — aborting");
+      setError("Cannot save: document ID is missing.");
+      return;
+    }
+    if (currentHtml == null) {
+      console.error("[EditorPage] doSave: currentHtml is null — aborting");
+      setError("Cannot save: editor content not loaded yet. Try clicking the editor first.");
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
+      console.log("[EditorPage] doSave: calling updateDocument...");
       const updated = await updateDocument(id, currentHtml, meta);
+      console.log("[EditorPage] doSave: updateDocument succeeded", updated.id);
       setDoc((prev) =>
         prev ? { ...prev, updated_at: updated.updated_at, product_name: updated.product_name, employee_name: updated.employee_name } : updated
       );
       setSuccess("Document saved.");
     } catch (e: unknown) {
+      console.error("[EditorPage] doSave: updateDocument failed", e);
       setError(e instanceof Error ? e.message : "Failed to save document");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleSave = () => {
-    if (!doc) return;
+  const handleSave = async () => {
+    console.log("[EditorPage] handleSave — doc:", doc?.id, "IS_MANUAL:", doc ? IS_MANUAL(doc) : "no doc", "IS_UNNAMED:", doc ? IS_UNNAMED(doc) : "no doc", "pendingSaveRef:", pendingSaveRef.current);
+    if (!doc) {
+      console.warn("[EditorPage] handleSave: doc not loaded yet");
+      return;
+    }
     // First save of an unnamed manual doc → show name modal
     if (IS_UNNAMED(doc) && !pendingSaveRef.current) {
+      console.log("[EditorPage] handleSave: opening name modal");
       setDocTitle("");
       setCreatedBy("");
       setNameModal(true);
       return;
     }
-    doSave();
+    await doSave();
   };
 
   const handleNameConfirm = async () => {
@@ -112,7 +124,7 @@ export function EditorPage() {
       toolbar={
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-ghost" onClick={() => navigate(IS_MANUAL(doc!) ? "/manual" : "/documents")}>← Back</button>
-          <button type="button" className="btn-outline" disabled={!doc || downloadingPdf} onClick={handleDownloadPdf}>{downloadingPdf ? "Saving…" : "PDF"}</button>
+          <button type="button" className="btn-outline" disabled={!doc} onClick={handleDownloadPdf}>PDF</button>
           <button type="button" className="btn-primary" onClick={handleSave} disabled={saving || !doc}>{saving ? "Saving…" : "Save"}</button>
         </div>
       }

@@ -724,10 +724,13 @@ async def update_terms(payload: TermsUpdateRequest) -> TermsResponse:
 
 @router.put("/documents/{doc_id}", response_model=DocumentInDB)
 async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> DocumentInDB:
+    logger.info("[update_document] PUT called doc_id=%s html_len=%s product_name=%r employee_name=%r",
+                doc_id, len(payload.html_content or ""), payload.product_name, payload.employee_name)
     oid: ObjectId
     try:
         oid = to_object_id(doc_id)
     except ValueError:
+        logger.warning("[update_document] Invalid ObjectId: %s", doc_id)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid id")
 
     set_fields: dict = {"html_content": payload.html_content, "updated_at": now_local()}
@@ -736,27 +739,37 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> Docume
     if payload.employee_name is not None:
         set_fields["employee_name"] = payload.employee_name.strip() or None
 
-    _, which = _find_doc_by_id(oid)
+    doc, which = _find_doc_by_id(oid)
+    logger.info("[update_document] _find_doc_by_id result: which=%r found=%s", which, doc is not None)
     if not which:
+        logger.warning("[update_document] doc_id=%s not found in either collection", doc_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     coll = manual_documents_collection if which == "manual_documents" else documents_collection
-    res = coll.find_one_and_update(
-        {"_id": oid},
-        {"$set": set_fields},
-        return_document=True,
-    )
+    logger.info("[update_document] updating in collection=%s set_fields_keys=%s", which, list(set_fields.keys()))
+    try:
+        res = coll.find_one_and_update(
+            {"_id": oid},
+            {"$set": set_fields},
+            return_document=True,
+        )
+    except Exception as e:
+        logger.exception("[update_document] MongoDB find_one_and_update failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
     if not res:
+        logger.warning("[update_document] find_one_and_update returned None for doc_id=%s", doc_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    logger.info("[update_document] success doc_id=%s", doc_id)
     return _serialize_mongo_doc(res)
 
 
 def _sanitize_filename(s: str, max_len: int = 80) -> str:
-    """Remove special chars, replace spaces with underscore."""
+    """Remove special/non-ASCII chars, replace spaces with underscore."""
     import re
-    s = re.sub(r'[<>:"/\\|?*]', '', str(s or ""))
+    s = re.sub(r'[^\x20-\x7E]', '', str(s or ""))  # keep only printable ASCII
+    s = re.sub(r'[<>:"/\\|?*]', '', s)
     s = s.replace(" ", "_").replace(",", "_")
     s = re.sub(r'_+', '_', s).strip('_')
-    return s[:max_len]
+    return s[:max_len] or "Document"
 
 
 def _extract_quotation_no_from_html(html: str) -> str | None:
@@ -791,16 +804,19 @@ async def get_pdf(doc_id: str) -> Response:
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    html = doc["html_content"]
+    html = doc.get("html_content") or ""
+    if not html.strip():
+        html = "<p>&nbsp;</p>"
     letterhead = doc.get("letterhead")
     local_export = doc.get("local_export")
     logger.info(
-        "PDF download: doc_id=%s letterhead=%s local_export=%s (export=$ local=Rs)",
-        doc_id, letterhead, local_export,
+        "PDF download: doc_id=%s letterhead=%s local_export=%s html_len=%s (export=$ local=Rs)",
+        doc_id, letterhead, local_export, len(html),
     )
     try:
         pdf_bytes = html_to_pdf(html, letterhead=letterhead, local_export=local_export)
     except Exception as e:
+        logger.exception("PDF generation failed for doc_id=%s", doc_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"PDF generation failed: {e}")
 
     buyer = _sanitize_filename(doc.get("buyer_name", "") or "Document")
