@@ -15,6 +15,7 @@ from app.db.mongo import TERMS_DOC_ID, documents_collection, now_local, terms_co
 from app.schemas.document import (
     BatchSummary,
     BulkDeleteRequest,
+    CreateManualDocumentRequest,
     DocumentInDB,
     DocumentSummary,
     GenerateBatchRequest,
@@ -196,6 +197,43 @@ def _serialize_mongo_doc(doc: Any) -> DocumentInDB:
     )
 
 
+@router.post("/documents/manual", response_model=DocumentInDB)
+async def create_manual_document(payload: CreateManualDocumentRequest) -> DocumentInDB:
+    """Create a blank document manually (no AI). Returns DocumentInDB for redirect to editor."""
+    from datetime import timezone
+    now = dt.now(timezone.utc)
+    batch_id = f"manual-{uuid.uuid4()}"
+    letterhead = (payload.letterhead or "").strip().lower() or None
+    local_export = (payload.local_export or "").strip().lower() or None
+    mongo_doc = {
+        "buyer_name": payload.buyer_name,
+        "product_name": payload.product_name,
+        "product_type": payload.product_type,
+        "doc_type": payload.doc_type,
+        "html_content": payload.html_content,
+        "letterhead": letterhead if letterhead in ("india", "dubai") else None,
+        "local_export": local_export,
+        "batch_id": batch_id,
+        "created_at": now,
+        "updated_at": now,
+        "employee_name": None,
+        "quotation_no": None,
+        "company_name": None,
+        "quantity": None,
+        "unit": None,
+        "country": None,
+        "port": None,
+        "incoterm": None,
+        "payment_terms": None,
+        "remarks": None,
+    }
+    result = documents_collection.insert_one(mongo_doc)
+    inserted = documents_collection.find_one({"_id": result.inserted_id})
+    if not inserted:
+        raise HTTPException(status_code=500, detail="Failed to create document")
+    return _serialize_mongo_doc(inserted)
+
+
 @router.post("/upload-preview", response_model=UploadPreviewResponse)
 async def upload_preview(file: UploadFile = File(...)) -> UploadPreviewResponse:
     """Upload Excel/CSV and return a clean preview of rows to the frontend."""
@@ -344,6 +382,7 @@ async def list_documents(
     to_date: str | None = None,
     skip: int = 0,
     limit: int = 50,
+    manual: bool = False,
 ) -> ListDocumentsResponse:
     """List documents with optional filters and pagination. Use 'q' to search buyer or product.
     product_type: 'chemical' | 'engineering'. batch_id: list all docs in a batch. from_date/to_date: ISO date (YYYY-MM-DD)."""
@@ -365,6 +404,8 @@ async def list_documents(
         query["product_type"] = product_type
     if batch_id and batch_id.strip():
         query["batch_id"] = batch_id.strip()
+    if manual:
+        query["batch_id"] = {"$regex": "^manual-", "$options": ""}
     if from_date or to_date:
         date_filter: dict[str, Any] = {}
         if from_date:

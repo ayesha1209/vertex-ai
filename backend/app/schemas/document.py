@@ -108,6 +108,17 @@ class DocumentCreate(DocumentBase):
     pass
 
 
+class CreateManualDocumentRequest(BaseModel):
+    """Request body for creating a document manually (no AI generation)."""
+    buyer_name: str
+    product_name: str
+    doc_type: DocumentType = DocumentType.quotation
+    product_type: ProductType = ProductType.chemical
+    letterhead: Optional[str] = None   # "india" | "dubai"
+    local_export: Optional[str] = None  # "local" | "export"
+    html_content: str = ""
+
+
 class DocumentInDB(DocumentBase):
     id: str
     created_at: datetime

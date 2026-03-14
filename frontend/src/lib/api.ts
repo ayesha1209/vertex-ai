@@ -110,6 +110,7 @@ export async function listDocuments(params?: {
   to_date?: string;
   skip?: number;
   limit?: number;
+  manual?: boolean;
 }): Promise<ListDocumentsResponse> {
   const usp = new URLSearchParams();
   if (params?.q?.trim()) usp.set("q", params.q.trim());
@@ -122,6 +123,7 @@ export async function listDocuments(params?: {
   if (params?.to_date) usp.set("to_date", params.to_date);
   if (params?.skip != null) usp.set("skip", String(params.skip));
   if (params?.limit != null) usp.set("limit", String(params.limit));
+  if (params?.manual) usp.set("manual", "true");
 
   const res = await fetch(`${API_BASE_URL}/documents?${usp.toString()}`);
   if (!res.ok) {
@@ -205,6 +207,27 @@ export async function updateDocument(
   if (!res.ok) {
     const error = await res.json().catch(() => null);
     throw new Error(error?.detail || "Failed to update document");
+  }
+  return res.json();
+}
+
+export async function createManualDocument(payload: {
+  buyer_name: string;
+  product_name: string;
+  doc_type: string;
+  product_type: string;
+  letterhead: string;
+  local_export: string;
+  html_content: string;
+}): Promise<DocumentInDB> {
+  const res = await fetch(`${API_BASE_URL}/documents/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Failed to create document");
   }
   return res.json();
 }

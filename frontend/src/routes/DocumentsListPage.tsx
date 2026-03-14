@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "../components/layout/DashboardLayout";
 import { GenerationProgressCard } from "../components/dashboard/GenerationProgressCard";
 import { SearchInput } from "../components/ui/SearchInput";
@@ -29,6 +29,7 @@ function getProductTypeFromPath(pathname: string): ProductTypeFilter {
 
 export function DocumentsListPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const productTypeFilter = useMemo(
     () => getProductTypeFromPath(location.pathname),
     [location.pathname]

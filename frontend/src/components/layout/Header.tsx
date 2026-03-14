@@ -6,6 +6,7 @@ const navItems: { to: string; label: string; step?: string; showWhen?: string }[
   { to: "/", label: "Upload", step: "1" },
   { to: "/generate", label: "Generate", step: "2", showWhen: "activeJob" },
   { to: "/documents", label: "Dashboard" },
+  { to: "/manual", label: "Manual Docs" },
   { to: "/terms", label: "Terms & Conditions" },
 ];
 
@@ -17,6 +18,7 @@ export function Header() {
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/";
     if (path === "/documents") return location.pathname === "/documents" || location.pathname.startsWith("/documents/");
+    if (path === "/manual") return location.pathname === "/manual";
     if (path === "/generate") return location.pathname === "/generate";
     if (path === "/terms") return location.pathname === "/terms";
     return false;
