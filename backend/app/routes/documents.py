@@ -443,8 +443,10 @@ async def list_batches(
         {"$limit": min(limit, 100)},
     ]
     try:
+        logger.info("list_batches: query=%s", match_query)
         total_result = list(documents_collection.aggregate(pipeline_count))
         total = total_result[0]["total"] if total_result else 0
+        logger.info("list_batches: total batches=%d", total)
         cursor = documents_collection.aggregate(pipeline_list)
         batches: List[BatchSummary] = []
         for d in cursor:
@@ -458,18 +460,21 @@ async def list_batches(
                     created_at=d.get("created_at") or dt.now(),
                 )
             )
+        logger.info("list_batches: returning %d batches", len(batches))
         return ListBatchesResponse(batches=batches, total=total)
-    except PyMongoError:
+    except PyMongoError as e:
+        logger.error("list_batches: PyMongoError: %s", e, exc_info=True)
         return ListBatchesResponse(
             batches=[],
             total=0,
-            warning="Database unavailable. Check MongoDB connection.",
+            warning=f"Database unavailable: {str(e)[:200]}",
         )
     except Exception as e:
+        logger.error("list_batches: unexpected error: %s", e, exc_info=True)
         return ListBatchesResponse(
             batches=[],
             total=0,
-            warning=f"Database error: {str(e)[:150]}",
+            warning=f"Database error: {str(e)[:200]}",
         )
 
 
