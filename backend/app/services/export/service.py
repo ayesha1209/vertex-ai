@@ -349,21 +349,49 @@ def _normalize_quotation_spacing(html: str) -> str:
 
 def _force_terms_sig_borders_off(html: str) -> str:
     """Force border:none on the terms/signatory table (13-15 + AUTHORIZED SIGNATORY).
-    Uses multiple strategies to find the table; strips ALL border properties and injects border:none !important."""
-    _NOBORDER = "border:none !important;border-width:0 !important;border-style:none !important;"
+    Uses multiple strategies to find the table; strips ALL border properties and injects border:none !important.
+    Also zeroes padding/margin so 13-15 aligns with 1-12 above."""
+    _NOBORDER_TABLE = (
+        "border:none !important;border-width:0 !important;border-style:none !important;"
+        "border-collapse:collapse !important;border-spacing:0 !important;"
+        "margin:0 !important;padding:0 !important;"
+    )
+    _NOBORDER_CELL = (
+        "border:none !important;border-width:0 !important;border-style:none !important;"
+        "padding:0 !important;"
+    )
 
-    def _strip_and_inject(tag: str) -> str:
+    def _strip_border_props(style_val: str) -> str:
+        """Remove all border-* and padding/margin properties from an inline style value."""
+        return re.sub(
+            r"\s*(?:border(?:-width|-style|-color|-collapse|-spacing)?|padding|margin)\s*:\s*[^;]+;?",
+            "", style_val, flags=re.IGNORECASE,
+        ).strip().strip(";")
+
+    def _inject_table(tag: str) -> str:
         if 'style="' in tag:
             style_m = re.search(r'style="([^"]*)"', tag)
             if style_m:
-                style_val = style_m.group(1)
-                style_val = re.sub(
-                    r"\s*border(?:-width|-style|-color|-collapse)?\s*:\s*[^;]+;?",
-                    "", style_val, flags=re.IGNORECASE,
-                ).strip().strip(";")
-                new_style = _NOBORDER + ((";" + style_val) if style_val else "")
+                cleaned = _strip_border_props(style_m.group(1))
+                new_style = _NOBORDER_TABLE + ((";" + cleaned) if cleaned else "")
+                tag = re.sub(r'style="[^"]*"', f'style="{new_style}"', tag, count=1)
+        else:
+            tag = tag[:-1] + f' style="{_NOBORDER_TABLE}">'
+        # Ensure cellpadding/cellspacing attributes for xhtml2pdf
+        if "cellpadding" not in tag:
+            tag = tag.replace("<table", '<table cellpadding="0"', 1)
+        if "cellspacing" not in tag:
+            tag = tag.replace("<table", '<table cellspacing="0"', 1)
+        return tag
+
+    def _inject_cell(tag: str) -> str:
+        if 'style="' in tag:
+            style_m = re.search(r'style="([^"]*)"', tag)
+            if style_m:
+                cleaned = _strip_border_props(style_m.group(1))
+                new_style = _NOBORDER_CELL + ((";" + cleaned) if cleaned else "")
                 return re.sub(r'style="[^"]*"', f'style="{new_style}"', tag, count=1)
-        return tag[:-1] + f' style="{_NOBORDER}">'
+        return tag[:-1] + f' style="{_NOBORDER_CELL}">'
 
     # Find table start position
     tbl_start = -1
@@ -399,10 +427,9 @@ def _force_terms_sig_borders_off(html: str) -> str:
 
     logger.info(">>> [EXPORT] _force_terms_sig_borders_off: found table at pos %d, len=%d", tbl_start, len(chunk))
 
-    chunk = re.sub(r"<table[^>]*>", lambda m: _strip_and_inject(m.group(0)), chunk, flags=re.IGNORECASE)
-    chunk = re.sub(r"<t[dhr][^>]*>", lambda m: _strip_and_inject(m.group(0)), chunk, flags=re.IGNORECASE)
-    # Also handle <tbody> which TipTap may insert
-    chunk = re.sub(r"<tbody[^>]*>", lambda m: _strip_and_inject(m.group(0)), chunk, flags=re.IGNORECASE)
+    chunk = re.sub(r"<table[^>]*>", lambda m: _inject_table(m.group(0)), chunk, flags=re.IGNORECASE)
+    chunk = re.sub(r"<t[dhr][^>]*>", lambda m: _inject_cell(m.group(0)), chunk, flags=re.IGNORECASE)
+    chunk = re.sub(r"<tbody[^>]*>", lambda m: _inject_cell(m.group(0)), chunk, flags=re.IGNORECASE)
     return html[:tbl_start] + chunk + html[end_table:]
 
 

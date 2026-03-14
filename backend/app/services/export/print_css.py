@@ -244,16 +244,21 @@ EXPORT_PRINT_CSS = """
   }
   .terms-sig-table {
     page-break-inside: avoid !important;
-    margin-left: 0 !important;
-    margin-right: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
   }
   .terms-sig-table td,
-  .quotation-page .terms-sig-table td {
+  .terms-sig-table th,
+  .quotation-page .terms-sig-table td,
+  .quotation-page .terms-sig-table th {
     padding: 0 !important;
+    margin: 0 !important;
   }
   .terms-sig-table td:first-child {
     padding-left: 0 !important;
-    padding-right: 12px !important;
+    padding-right: 8px !important;
   }
   .terms-sig-table td:last-child {
     padding: 0 !important;
