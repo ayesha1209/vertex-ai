@@ -62,11 +62,27 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
     if not store or store["status"] == "done":
         return
     q: Queue = store["queue"]
+    total_rows = len(rows)
+    inserted_count = 0
     try:
-        for row in rows:
+        for row_idx, row in enumerate(rows):
             if store.get("cancelled"):
+                logger.info("Batch job %s cancelled at row %d/%d", job_id, row_idx, total_rows)
                 break
-            docs_to_insert = generate_documents_for_row(row)
+            row_label = f"{getattr(row, 'buyer_name', '?')}/{getattr(row, 'product_name', '?')}"
+            logger.info("Batch %s: generating row %d/%d (%s)", job_id, row_idx + 1, total_rows, row_label)
+            try:
+                docs_to_insert = generate_documents_for_row(row)
+            except Exception as gen_err:
+                logger.error(
+                    "Batch %s: AI generation FAILED for row %d/%d (%s): %s",
+                    job_id, row_idx + 1, total_rows, row_label, gen_err, exc_info=True,
+                )
+                try:
+                    q.put_nowait({"error": f"Generation failed for {row_label}: {gen_err}"})
+                except Exception:
+                    pass
+                continue
             now = now_local()
             for doc in docs_to_insert:
                 mongo_doc = {
@@ -84,9 +100,21 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                     "company_name": getattr(doc, "company_name", None),
                     "local_export": getattr(doc, "local_export", None),
                 }
-                result = documents_collection.insert_one(mongo_doc)
-                inserted = documents_collection.find_one({"_id": result.inserted_id})
+                try:
+                    result = documents_collection.insert_one(mongo_doc)
+                    inserted = documents_collection.find_one({"_id": result.inserted_id})
+                except Exception as db_err:
+                    logger.error(
+                        "Batch %s: MongoDB insert FAILED for %s/%s: %s",
+                        job_id, doc.doc_type, row_label, db_err, exc_info=True,
+                    )
+                    try:
+                        q.put_nowait({"error": f"DB insert failed for {doc.doc_type} ({row_label}): {db_err}"})
+                    except Exception:
+                        pass
+                    continue
                 if inserted:
+                    inserted_count += 1
                     summary = DocumentSummary(
                         id=str(inserted["_id"]),
                         buyer_name=inserted["buyer_name"],
@@ -102,9 +130,16 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                         q.put_nowait(summary.model_dump(mode="json"))
                     except Exception:
                         pass
-    except Exception:
-        pass
+                else:
+                    logger.warning("Batch %s: insert_one OK but find_one returned None for %s", job_id, doc.doc_type)
+    except Exception as e:
+        logger.error("Batch %s: UNEXPECTED error: %s", job_id, e, exc_info=True)
+        try:
+            q.put_nowait({"error": f"Batch failed: {e}"})
+        except Exception:
+            pass
     finally:
+        logger.info("Batch %s: finished. Inserted %d documents from %d rows.", job_id, inserted_count, total_rows)
         store["status"] = "done"
         try:
             q.put_nowait("done")

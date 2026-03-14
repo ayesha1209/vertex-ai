@@ -253,11 +253,42 @@ def _prepare_body_for_export(html: str) -> str:
     return body
 
 
+def _ensure_dollar_prefix_in_export(html: str) -> str:
+    """
+    When export is selected, prepend $ to amount cells that have no currency symbol,
+    so PDF shows e.g. '$9,250.00' instead of '9,250.00'. Only touches totals and items-table.
+    """
+    out = html
+    # Totals table: Total Amount cell — if the value is just a number, prepend $
+    out = re.sub(
+        r"(Total\s+Amount\s*</td>\s*<td[^>]*>)(\s*)(?![\$₹]|Rs\.)(\d[\d,]*\.?\d*)",
+        r"\1\2$\3",
+        out,
+        flags=re.IGNORECASE,
+    )
+    # Items table: Unit Price / Unit Amount columns — amounts like 185,000.00 or 9250.00 (no symbol)
+    match = re.search(
+        r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>(.*?)</table>',
+        out,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if match:
+        block = match.group(1)
+        # Prepend $ to <td> that contains only a number (with optional commas and .xx) and no symbol
+        new_block = re.sub(
+            r"(<td[^>]*>)(\s*)(?![\$₹]|Rs\.)(\d[\d,]*\.\d{2})\s*</td>",
+            r"\1\2$\3</td>",
+            block,
+        )
+        out = out[: match.start(1)] + new_block + out[match.end(1) :]
+    return out
+
+
 def _normalize_currency_for_export(html: str, local_export: Optional[str] = None) -> str:
     """
     Normalize currency symbols for PDF/DOCX export.
     - LOCAL: Rupee symbol/HTML entities → 'Rs. ' (avoid missing-glyph boxes).
-    - EXPORT: Any rupee symbol/HTML entity or 'Rs.' prefix → '$'.
+    - EXPORT: Any rupee symbol/HTML entity or 'Rs.' prefix → '$'; also prepend $ to amounts that have no symbol.
     If local_export is not provided, default to legacy behaviour (treat as LOCAL).
     """
     flag = (local_export or "").strip().lower()
@@ -266,13 +297,13 @@ def _normalize_currency_for_export(html: str, local_export: Optional[str] = None
         logger.info(f">>> [EXPORT] Currency: local_export={local_export!r} -> using Rs. (local)")
         return _replace_rupee_for_export(html)
 
-    # EXPORT: defensively convert any rupee representations to dollar.
+    # EXPORT: convert rupee to $ and ensure $ appears where amounts have no symbol.
     logger.info(f">>> [EXPORT] Currency: local_export={local_export!r} -> using $ (export)")
     out = html.replace(RUPEESYM, "$")
     out = out.replace(RUPEESYM_ENTITY_DEC, "$")
     out = out.replace(RUPEESYM_ENTITY_HEX, "$")
-    # Common textual forms
     out = re.sub(r"\bRs\.?\s*", "$", out, flags=re.IGNORECASE)
+    out = _ensure_dollar_prefix_in_export(out)
     return out
 
 
