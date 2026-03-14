@@ -349,8 +349,7 @@ def _normalize_quotation_spacing(html: str) -> str:
 
 def _force_terms_sig_borders_off(html: str) -> str:
     """Force border:none on the terms/signatory table (13-15 + AUTHORIZED SIGNATORY).
-    Finds the table by CONTENT (not class) so it works even if class restoration failed.
-    Strips any existing border properties and injects border:none !important on every element."""
+    Uses multiple strategies to find the table; strips ALL border properties and injects border:none !important."""
     _NOBORDER = "border:none !important;border-width:0 !important;border-style:none !important;"
 
     def _strip_and_inject(tag: str) -> str:
@@ -366,41 +365,45 @@ def _force_terms_sig_borders_off(html: str) -> str:
                 return re.sub(r'style="[^"]*"', f'style="{new_style}"', tag, count=1)
         return tag[:-1] + f' style="{_NOBORDER}">'
 
+    # Find table start position
+    tbl_start = -1
+
     # Strategy 1: find by class
-    tbl_match = re.search(r'<table[^>]*class="[^"]*terms-sig-table[^"]*"', html, re.IGNORECASE)
-    # Strategy 2: find by content — first table after "TERMS & CONDITIONS" that contains "AUTHORIZED" or "13."
-    if not tbl_match and "TERMS & CONDITIONS" in html:
-        tc_pos = html.find("TERMS & CONDITIONS")
-        for tm in re.finditer(r"<table[^>]*>", html[tc_pos:]):
-            abs_start = tc_pos + tm.start()
+    cls_m = re.search(r'<table[^>]*class="[^"]*terms-sig-table[^"]*"', html, re.IGNORECASE)
+    if cls_m:
+        tbl_start = cls_m.start()
+
+    # Strategy 2: find by content — any table containing "AUTHORIZED" and "13." or similar
+    if tbl_start < 0:
+        for tm in re.finditer(r"<table[^>]*>", html):
             tag = tm.group(0)
             if "items-table" in tag or "totals-table" in tag or "customer-table" in tag or "delivery-table" in tag:
                 continue
-            end_tbl = html.find("</table>", abs_start)
+            end_tbl = html.find("</table>", tm.end())
             if end_tbl == -1:
                 continue
-            peek = html[abs_start : end_tbl]
-            if "AUTHORIZED" in peek.upper() or "13." in peek:
-                tbl_match = tm
-                # Adjust so .start() is absolute
-                class FakeMatch:
-                    def start(self):
-                        return abs_start
-                tbl_match = FakeMatch()
+            body = html[tm.end():end_tbl]
+            body_upper = body.upper()
+            if "AUTHORIZED" in body_upper and ("13." in body or "CLAIMS" in body_upper):
+                tbl_start = tm.start()
                 break
-    if not tbl_match:
+
+    if tbl_start < 0:
         return html
 
-    start = tbl_match.start()
-    end_table = html.find("</table>", start)
+    end_table = html.find("</table>", tbl_start + 1)
     if end_table == -1:
         return html
     end_table += len("</table>")
-    chunk = html[start:end_table]
+    chunk = html[tbl_start:end_table]
+
+    logger.info(">>> [EXPORT] _force_terms_sig_borders_off: found table at pos %d, len=%d", tbl_start, len(chunk))
 
     chunk = re.sub(r"<table[^>]*>", lambda m: _strip_and_inject(m.group(0)), chunk, flags=re.IGNORECASE)
     chunk = re.sub(r"<t[dhr][^>]*>", lambda m: _strip_and_inject(m.group(0)), chunk, flags=re.IGNORECASE)
-    return html[:start] + chunk + html[end_table:]
+    # Also handle <tbody> which TipTap may insert
+    chunk = re.sub(r"<tbody[^>]*>", lambda m: _strip_and_inject(m.group(0)), chunk, flags=re.IGNORECASE)
+    return html[:tbl_start] + chunk + html[end_table:]
 
 
 def _prepare_body_for_export(html: str) -> str:
@@ -910,32 +913,20 @@ def _normalize_body(html: str) -> str:
         html,
         flags=re.IGNORECASE,
     )
-    # Find position of the terms-sig table so we can skip adding borders to it
-    _terms_sig_tbl_start = -1
-    if "TERMS & CONDITIONS" in html:
-        _tc = html.find("TERMS & CONDITIONS")
-        for _tm in re.finditer(r"<table[^>]*>", html[_tc:]):
-            _abs = _tc + _tm.start()
-            _tag = _tm.group(0)
-            if "items-table" in _tag or "totals-table" in _tag or "customer-table" in _tag or "delivery-table" in _tag:
-                continue
-            _etbl = html.find("</table>", _abs)
-            if _etbl == -1:
-                continue
-            _peek = html[_abs:_etbl]
-            if "AUTHORIZED" in _peek.upper() or "13." in _peek:
-                _terms_sig_tbl_start = _abs
-                break
-
     def _table_repl(m: Match) -> str:
         rest = (m.group(1) or "").strip()
         if "style=" in rest:
             return m.group(0)
         if "terms-sig-table" in rest:
             return m.group(0)
-        # Skip the terms/signatory table
-        if _terms_sig_tbl_start >= 0 and m.start() == _terms_sig_tbl_start:
-            return m.group(0)
+        # Skip the terms/signatory table by checking content after <table>
+        after_pos = m.end()
+        close_tbl = html.find("</table>", after_pos)
+        if close_tbl > 0:
+            inner = html[after_pos:close_tbl]
+            inner_upper = inner.upper()
+            if "AUTHORIZED" in inner_upper and ("13." in inner or "CLAIMS" in inner_upper):
+                return m.group(0)
         if rest:
             return f'<table {rest} style="{_TABLE_INLINE}">'.replace("  ", " ").strip()
         return f'<table style="{_TABLE_INLINE}">'
