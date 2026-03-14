@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from bson import ObjectId
 from pymongo import MongoClient
@@ -17,8 +17,8 @@ TERMS_DOC_ID = "default"
 
 
 def now_local() -> datetime:
-    """Return current local time (system timezone)."""
-    return datetime.now()
+    """Return current time in UTC. Store UTC in DB; frontend shows in user's local timezone."""
+    return datetime.now(timezone.utc)
 
 
 def to_object_id(id_str: str) -> ObjectId:

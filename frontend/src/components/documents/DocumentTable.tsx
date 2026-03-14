@@ -4,11 +4,16 @@ import type { DocumentSummary } from "../../lib/types";
 import { savePdf } from "../../lib/api";
 import { DocTypeIcon } from "../ui/DocTypeIcon";
 
+/** Parse API timestamp as UTC when no timezone suffix (backend stores UTC). */
+function parseUtc(dateStr: string | Date): Date {
+  const s = String(dateStr).trim();
+  if (!s.endsWith("Z") && !/[-+]\d{2}:?\d{2}$/.test(s)) return new Date(s + "Z");
+  return new Date(s);
+}
+
+/** Format time in user's local timezone (API sends UTC). */
 function formatTime(dateStr: string | Date): string {
-  const date = new Date(dateStr);
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
+  return parseUtc(dateStr).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function PdfIcon({ className }: { className?: string }) {
@@ -145,7 +150,7 @@ export function DocumentTable({
                       <td className="px-3 py-3 text-slate-700 sm:px-6 sm:py-4">{doc.product_name}</td>
                       <td className="px-3 py-3 text-slate-600 sm:px-6 sm:py-4">{doc.employee_name ?? "—"}</td>
                       <td className="hidden px-6 py-4 text-slate-500 sm:table-cell">
-                        {new Date(doc.created_at).toLocaleDateString()}
+                        {parseUtc(doc.created_at).toLocaleDateString(undefined, { dateStyle: "short" })}
                       </td>
                       <td className="hidden px-6 py-4 text-slate-500 sm:table-cell">
                         {formatTime(doc.created_at)}
