@@ -54,7 +54,13 @@ DATA & CONTENT RULES (avoid incomplete/unprofessional output)
     * Port of Loading: Use the major port nearest to the supplier's country/region. For India: Kandla, Mundra, JNPT (Mumbai), Chennai. For China: Shanghai, Ningbo, Shenzhen. For Europe: Rotterdam, Hamburg, Antwerp.
     * Port of Discharge: Use the major port nearest to the buyer's country/region. Examples: UAE → Jebel Ali; Netherlands/Europe → Rotterdam; USA East → New York/Newark; USA West → Los Angeles; UK → Felixstowe; Singapore → Singapore; Australia → Melbourne/Sydney.
     * Never use "N/A" for ports on export orders - always generate appropriate port names.
-  - Bank details: use standard placeholder only if truly unknown. If supplier/bank is in India use Account Name, Bank Name, IFSC, Branch. If supplier/bank is outside India do NOT use IFSC (Indian code); use SWIFT code instead (e.g. SWIFT: XXXXXXXX).
+  - Bank details: ALWAYS use the following fixed bank details (never generate different ones):
+    Account Name: VERTEX CHEMICAL CORPORATION
+    A/c No: 50200115602188
+    Bank Name & Branch: HDFC Bank, Vasna Road Branch
+    IFSC: HDFC0001712
+    SWIFT: HDFCINBBXXX
+    Customer ID: 347711727 (VASAVA VISHALKUMAR)
   - Signatory: use "Authorized Signatory" or Company name; never leave blank.
   - Mfg date / Expiry / Batch: use plausible values (e.g. batch format PROD-YYMM-001, expiry 24 months from mfg).
   - IEC Code: Indian Import/Export Code only. If Country of Origin / Supplier is NOT India, use N/A for IEC (do not invent an IEC for foreign suppliers).
@@ -159,7 +165,8 @@ Rule: For every product, use one row only — the one that matches the product n
 COUNTRY-SPECIFIC CODES (MANDATORY)
 • IEC: Indian Export Code only. If Country of Origin / Supplier is not India, use N/A for IEC.
 • GSTIN: Indian GST only. If supplier is not Indian, use N/A for GSTIN.
-• Bank: IFSC applies to Indian banks only. If the supplier's bank is outside India, use N/A for IFSC and provide SWIFT code when known (recommended for international LC); if SWIFT is unknown use N/A or placeholder.
+• Bank: ALWAYS use the fixed bank details below — do NOT generate or invent bank details:
+  Account Name: VERTEX CHEMICAL CORPORATION | A/c No: 50200115602188 | Bank Name & Branch: HDFC Bank, Vasna Road Branch | IFSC: HDFC0001712 | SWIFT: HDFCINBBXXX | Customer ID: 347711727 (VASAVA VISHALKUMAR)
 
 --------------------------------------------------
 SECTION HEADING AND CONTENT MATCH (MANDATORY)
@@ -243,14 +250,15 @@ Address|[Ship To Address]| |
 ---TABLE---
 
 === SECTION 2: DELIVERY & BANK DETAILS (Four-Column Table, NO header row, all data rows) ===
-Delivery|[e.g. 6 days after order confirmation]|Account Name|[Supplier Name]
-Transport Mode|[BY Road / Sea / Air]|Account No|[Account Number]
-Port of Loading|[Port of loading]|Bank Name|[Bank Name]
-Port of Discharge|[Port of discharge]|Branch|[Branch]
-Country of Origin|[e.g. INDIA]|IFSC Code|[IFSC Code]
-Terms of Delivery|[Incoterm e.g. FOB/CIF]| |
+Delivery|[e.g. 6 days after order confirmation]|Account Name|VERTEX CHEMICAL CORPORATION
+Transport Mode|[BY Road / Sea / Air]|A/c No|50200115602188
+Port of Loading|[Port of loading]|Bank Name & Branch|HDFC Bank, Vasna Road Branch
+Port of Discharge|[Port of discharge]|IFSC|HDFC0001712
+Country of Origin|[e.g. INDIA]|SWIFT|HDFCINBBXXX
+Terms of Delivery|[Incoterm e.g. FOB/CIF]|Customer ID|347711727 (VASAVA VISHALKUMAR)
 ---TABLE---
 NOTE: Do NOT include a "Currency" or "Currency USD" row in the Delivery table. Omit it entirely.
+NOTE: Bank details (right 2 columns) are FIXED — copy them EXACTLY as shown above. Do NOT change them.
 
 === SECTION 3: ITEM TABLE (Five Columns with header row) ===
 No.|Description of Goods|Quantity|Unit Price|Unit Amount

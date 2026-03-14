@@ -128,6 +128,58 @@ def _split_sections_with_product_name(
     return result
 
 
+# Fixed bank details — always overwrite whatever the AI generated
+_BANK_DETAIL_VALUES = {
+    "account name":       "VERTEX CHEMICAL CORPORATION",
+    "a/c no":             "50200115602188",
+    "account no":         "50200115602188",
+    "account number":     "50200115602188",
+    "bank name":          "HDFC Bank, Vasna Road Branch",
+    "bank name & branch": "HDFC Bank, Vasna Road Branch",
+    "branch":             "Vasna Road Branch",
+    "ifsc":               "HDFC0001712",
+    "ifsc code":          "HDFC0001712",
+    "swift":              "HDFCINBBXXX",
+    "swift code":         "HDFCINBBXXX",
+    "customer id":        "347711727 (VASAVA VISHALKUMAR)",
+}
+
+
+def _force_bank_details(html: str) -> str:
+    """In the delivery-table, overwrite bank-detail value cells with fixed constants.
+    The table has 4 columns per row: DeliveryLabel | DeliveryValue | BankLabel | BankValue.
+    We identify rows by BankLabel text and replace BankValue with the constant."""
+    def _process_delivery_table(m: re.Match) -> str:
+        before, body, after = m.group(1), m.group(2), m.group(3)
+
+        def _fix_row(row_m: re.Match) -> str:
+            row = row_m.group(0)
+            tds = list(re.finditer(r"(<td[^>]*>)(.*?)(</td>)", row, re.DOTALL | re.IGNORECASE))
+            if len(tds) < 4:
+                return row
+            label_td = tds[2]
+            value_td = tds[3]
+            label_text = re.sub(r"<[^>]+>", "", label_td.group(2)).strip().lower().rstrip(":")
+            fixed_val = _BANK_DETAIL_VALUES.get(label_text)
+            if fixed_val is None:
+                return row
+            # Replace value cell content with fixed value
+            new_value_inner = label_td.group(1).replace(label_td.group(1), value_td.group(1)) + fixed_val + value_td.group(3)
+            row = row[: value_td.start()] + value_td.group(1) + fixed_val + value_td.group(3) + row[value_td.end():]
+            return row
+
+        body = re.sub(r"<tr[^>]*>.*?</tr>", _fix_row, body, flags=re.DOTALL | re.IGNORECASE)
+        return before + body + after
+
+    html = re.sub(
+        r'(<table[^>]*class="[^"]*delivery-table[^"]*"[^>]*>)(.*?)(</table>)',
+        _process_delivery_table,
+        html,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    return html
+
+
 def _ensure_currency_in_totals(html: str, local_export: str | None) -> str:
     """Ensure quotation uses ₹ (rupee) and Rs for LOCAL, $ and USD for EXPORT in headers, items table, totals and delivery currency row."""
     if not local_export:
@@ -230,6 +282,7 @@ def assemble_separate_documents(
         q_heading = '<h1 style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;">QUOTATION</h1>'
         q_html = q_heading + q_html
     q_html = QUOTATION_WRAPPER + q_html + QUOTATION_WRAPPER_END
+    q_html = _force_bank_details(q_html)
     q_html = _ensure_currency_in_totals(q_html, local_export)
 
     letterhead_val = letterhead.strip().lower() if (letterhead and isinstance(letterhead, str)) else None
