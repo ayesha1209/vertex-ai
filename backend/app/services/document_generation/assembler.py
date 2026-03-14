@@ -8,6 +8,45 @@ from app.services.document_generation.response_parser import PAGE_BREAK, text_to
 QUOTATION_WRAPPER = '<div class="quotation-page">'
 QUOTATION_WRAPPER_END = "</div>"
 
+_H1_STYLE = "font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;"
+
+# Titles for each doc type (used to strip duplicates and prepend a clean heading)
+_DOC_TITLES = {
+    "tds": "TECHNICAL DATA SHEET (TDS)",
+    "coa": "CERTIFICATE OF ANALYSIS (COA)",
+    "msds": "MATERIAL SAFETY DATA SHEET (MSDS)",
+}
+
+# Patterns that match title lines the AI repeats (e.g. "# TECHNICAL DATA SHEET (TDS)" or just "TECHNICAL DATA SHEET (TDS)")
+_TITLE_STRIP_PATTERNS = [
+    re.compile(r"^\s*#\s*TECHNICAL DATA SHEET\s*\(TDS\)(?:\s*-\s*[^\n]*)?\s*$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*#\s*CERTIFICATE OF ANALYSIS\s*\(COA\)(?:\s*-\s*[^\n]*)?\s*$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*#\s*MATERIAL SAFETY DATA SHEET\s*\(MSDS\)(?:\s*-\s*[^\n]*)?\s*$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*TECHNICAL DATA SHEET\s*\(TDS\)\s*$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*CERTIFICATE OF ANALYSIS\s*\(COA\)\s*$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*MATERIAL SAFETY DATA SHEET\s*\(MSDS\)\s*$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*FULL TECHNICAL DATA SHEET\s*\(TDS\)\s*$", re.IGNORECASE | re.MULTILINE),
+]
+
+# "Section N:" prefix pattern — strip from MSDS/TDS headings
+_SECTION_PREFIX = re.compile(r"^Section\s+\d+\s*:\s*", re.IGNORECASE)
+
+
+def _clean_doc_text(text: str) -> str:
+    """Strip duplicate title lines and 'Section N:' prefixes from TDS/COA/MSDS text before HTML conversion."""
+    for pat in _TITLE_STRIP_PATTERNS:
+        text = pat.sub("", text)
+    # Remove "Section N:" prefix from heading lines (e.g. "Section 1: Identification" -> "Identification")
+    lines = text.splitlines()
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        if _SECTION_PREFIX.match(stripped):
+            cleaned.append(_SECTION_PREFIX.sub("", stripped))
+        else:
+            cleaned.append(line)
+    return "\n".join(cleaned)
+
 
 def _fix_description_line_breaks(html: str) -> str:
     """Post-process HTML to ensure Make: and HSN: are on separate lines in item descriptions."""
@@ -209,27 +248,34 @@ def assemble_separate_documents(
         ),
     ]
 
+    def _build_doc(doc_type_key: str, raw_text: str, sec_product: str, is_coa: bool = False) -> DocumentCreate:
+        """Clean text, convert to HTML, prepend single heading."""
+        cleaned = _clean_doc_text(raw_text)
+        body_html = text_to_html(cleaned)
+        title = _DOC_TITLES[doc_type_key]
+        heading = f'<h1 style="{_H1_STYLE}">{title}</h1>'
+        # Strip any remaining duplicate <h1> that matches this doc's title
+        body_html = re.sub(
+            rf'<h1[^>]*>\s*{re.escape(title)}\s*</h1>',
+            "",
+            body_html,
+            flags=re.IGNORECASE,
+        )
+        full_html = heading + "\n" + body_html
+        if is_coa:
+            full_html = '<div class="coa-section">' + full_html + "</div>"
+        dt = {"tds": DocumentType.tds, "coa": DocumentType.coa, "msds": DocumentType.msds}[doc_type_key]
+        return DocumentCreate(**common_base, product_name=sec_product, doc_type=dt, html_content=full_html)
+
     # TDS: one document per product (section)
     tds_pattern = r"#\s*TECHNICAL DATA SHEET\s*\(TDS\)"
     tds_sections_with_name = _split_sections_with_product_name(tds_text, tds_pattern, product_name)
     for tds_sec, sec_product in tds_sections_with_name:
         if tds_sec.strip():
-            out.append(
-                DocumentCreate(
-                    **common_base,
-                    product_name=sec_product,
-                    doc_type=DocumentType.tds,
-                    html_content=text_to_html(tds_sec),
-                )
-            )
+            out.append(_build_doc("tds", tds_sec, sec_product))
     if not any(s[0].strip() for s in tds_sections_with_name):
         out.append(
-            DocumentCreate(
-                **common_base,
-                product_name=product_name,
-                doc_type=DocumentType.tds,
-                html_content="<p>No TDS content.</p>",
-            )
+            DocumentCreate(**common_base, product_name=product_name, doc_type=DocumentType.tds, html_content="<p>No TDS content.</p>")
         )
 
     # COA: one document per product (section)
@@ -237,23 +283,10 @@ def assemble_separate_documents(
     coa_sections_with_name = _split_sections_with_product_name(coa_text, coa_pattern, product_name)
     for coa_sec, sec_product in coa_sections_with_name:
         if coa_sec.strip():
-            coa_html_sec = '<div class="coa-section">' + text_to_html(coa_sec) + "</div>"
-            out.append(
-                DocumentCreate(
-                    **common_base,
-                    product_name=sec_product,
-                    doc_type=DocumentType.coa,
-                    html_content=coa_html_sec,
-                )
-            )
+            out.append(_build_doc("coa", coa_sec, sec_product, is_coa=True))
     if not any(s[0].strip() for s in coa_sections_with_name):
         out.append(
-            DocumentCreate(
-                **common_base,
-                product_name=product_name,
-                doc_type=DocumentType.coa,
-                html_content="<p>No COA content.</p>",
-            )
+            DocumentCreate(**common_base, product_name=product_name, doc_type=DocumentType.coa, html_content="<p>No COA content.</p>")
         )
 
     # MSDS: one document per product (section)
@@ -261,22 +294,10 @@ def assemble_separate_documents(
     msds_sections_with_name = _split_sections_with_product_name(msds_text, msds_pattern, product_name)
     for msds_sec, sec_product in msds_sections_with_name:
         if msds_sec.strip():
-            out.append(
-                DocumentCreate(
-                    **common_base,
-                    product_name=sec_product,
-                    doc_type=DocumentType.msds,
-                    html_content=text_to_html(msds_sec),
-                )
-            )
+            out.append(_build_doc("msds", msds_sec, sec_product))
     if not any(s[0].strip() for s in msds_sections_with_name):
         out.append(
-            DocumentCreate(
-                **common_base,
-                product_name=product_name,
-                doc_type=DocumentType.msds,
-                html_content="<p>No MSDS content.</p>",
-            )
+            DocumentCreate(**common_base, product_name=product_name, doc_type=DocumentType.msds, html_content="<p>No MSDS content.</p>")
         )
 
     return out

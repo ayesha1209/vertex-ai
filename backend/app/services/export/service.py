@@ -214,7 +214,7 @@ def _get_header_html() -> str:
                 <p style="font-size:14px; font-weight:bold; color:#1a5276; margin:0; padding:0;">VERTEX CHEMICAL</p>
                 <p style="font-size:7px; color:#666; letter-spacing:0.5px; margin:0; padding:0;">YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY</p>
             </td>
-            <td style="width:150px; border:none; border-left:1px solid #999; padding:2px 2px 2px 10px; vertical-align:middle;">
+            <td style="width:150px; border:none; padding:2px 2px 2px 10px; vertical-align:middle;">
                 <p style="font-size:8px; color:#333; text-align:right; margin:0; padding:0;"><b>Phone:</b> +91 8866335159</p>
                 <p style="font-size:8px; color:#333; text-align:right; margin:0; padding:0;"><b>Web:</b> vertexchemical.in</p>
             </td>
@@ -358,7 +358,7 @@ def _header_footer_tables(
 <b style="font-size:11pt; color:#1a5276; line-height:1.25;">VERTEX CHEMICAL</b><br/>
 <span style="font-size:5.5pt; color:#666; letter-spacing:0.3pt; line-height:1.25;">YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY</span>
 </td>
-<td style="width:34%; padding:2px 8px; vertical-align:middle; text-align:right; border-left:1px solid #999 !important; word-wrap:break-word; overflow-wrap:break-word; white-space:normal; line-height:1.35;">
+<td style="width:34%; padding:2px 8px; vertical-align:middle; text-align:right; word-wrap:break-word; overflow-wrap:break-word; white-space:normal; line-height:1.35;">
 <span style="font-size:7pt; color:#333;"><b>Phone:</b> {h_phone}</span><br/>
 <span style="font-size:7pt; color:#333;"><b>Web:</b> {h_web}</span>
 </td>
