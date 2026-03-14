@@ -78,6 +78,13 @@ def _restore_quotation_format(html: str) -> str:
                 new_tag = new_tag.rstrip() + ">"
             html = html[: m.start()] + new_tag + html[m.end() :]
             break
+    # 1b) Restore colgroup for items-table if missing (TipTap strips it)
+    items_m = re.search(r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>', html)
+    if items_m:
+        after_tag = items_m.end()
+        if "<colgroup" not in html[after_tag : after_tag + 120]:
+            colgroup = '<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/><col style="width:20%"/><col style="width:20%"/></colgroup>'
+            html = html[:after_tag] + colgroup + html[after_tag:]
     # 2) Restore totals-table: first table containing "Total Amount" without that class
     pos = html.find("Total Amount")
     if pos != -1:
@@ -90,7 +97,37 @@ def _restore_quotation_format(html: str) -> str:
                 if html[after : after + 1] not in (" ", ">"):
                     insert = " " + insert
                 html = html[:after] + insert + html[after:]
-    # 3) Restore terms-sig-wrapper on the div that contains TERMS & CONDITIONS (and AUTHORIZED) but lost the class
+    # 3a) Restore customer-table: table containing "Bill To" or "Buyer"
+    if "customer-table" not in html:
+        for m in re.finditer(r"<table(\s[^>]*)?>", html):
+            tag = m.group(0)
+            if "class=" in tag:
+                continue
+            start = m.end()
+            chunk = html[start : min(start + 600, len(html))]
+            if "Bill To" in chunk or "Buyer" in chunk:
+                after = m.start() + 6
+                insert = ' class="customer-table"'
+                if html[after : after + 1] not in (" ", ">"):
+                    insert = " " + insert
+                html = html[:after] + insert + html[after:]
+                break
+    # 3b) Restore delivery-table: table containing "Delivery" / "Port" / "Payment"
+    if "delivery-table" not in html:
+        for m in re.finditer(r"<table(\s[^>]*)?>", html):
+            tag = m.group(0)
+            if "class=" in tag:
+                continue
+            start = m.end()
+            chunk = html[start : min(start + 600, len(html))]
+            if ("Delivery" in chunk or "Port" in chunk or "Payment" in chunk) and "Description of Goods" not in chunk:
+                after = m.start() + 6
+                insert = ' class="delivery-table"'
+                if html[after : after + 1] not in (" ", ">"):
+                    insert = " " + insert
+                html = html[:after] + insert + html[after:]
+                break
+    # 3c) Restore terms-sig-wrapper on the div that contains TERMS & CONDITIONS (and AUTHORIZED) but lost the class
     if "terms-sig-wrapper" not in html and "TERMS & CONDITIONS" in html and "AUTHORIZED" in html.upper():
         pos = html.find("TERMS & CONDITIONS")
         if pos != -1:
@@ -285,12 +322,41 @@ def _normalize_quotation_spacing(html: str) -> str:
     return html
 
 
+def _force_terms_sig_borders_off(html: str) -> str:
+    """Inject inline border:none on every <td>, <tr>, and <table> inside a terms-sig-table.
+    Needed because xhtml2pdf ignores CSS specificity; inline !important is the only reliable way."""
+    m = re.search(r'<table[^>]*class="[^"]*terms-sig-table[^"]*"', html, re.IGNORECASE)
+    if not m:
+        return html
+    start = m.start()
+    end_table = html.find("</table>", start)
+    if end_table == -1:
+        return html
+    end_table += len("</table>")
+    chunk = html[start:end_table]
+
+    _NOBORDER = "border:none !important;border-width:0 !important;"
+
+    def _inject_border(tag_match: re.Match) -> str:
+        tag = tag_match.group(0)
+        if "border" in tag:
+            return tag
+        if 'style="' in tag:
+            return tag.replace('style="', f'style="{_NOBORDER}')
+        return tag[:-1] + f' style="{_NOBORDER}">'
+
+    chunk = re.sub(r"<t[dhr][^>]*>", _inject_border, chunk, flags=re.IGNORECASE)
+    chunk = re.sub(r"<table[^>]*>", _inject_border, chunk, flags=re.IGNORECASE)
+    return html[:start] + chunk + html[end_table:]
+
+
 def _prepare_body_for_export(html: str) -> str:
     """Run body normalization steps that are independent of currency/local_export."""
     body = _restore_quotation_format(html)
     body = _strip_currency_row_from_quotation(body)
     body = _normalize_body(body)
     body = _normalize_quotation_spacing(body)
+    body = _force_terms_sig_borders_off(body)
     return body
 
 

@@ -160,24 +160,68 @@ EXPORT_PRINT_CSS = """
     margin: 2px 0 !important;
     line-height: 1.3 !important;
   }
-  /* Items table column widths */
+  /* ── Items table ── */
   .items-table {
     table-layout: fixed !important;
   }
-  .items-table td:nth-child(1) {
-    width: 4% !important;
+  .items-table td:nth-child(1),
+  .items-table th:nth-child(1) {
+    width: 6% !important;
+    white-space: nowrap !important;
   }
-  .items-table td:nth-child(2) {
-    width: 42% !important;
+  .items-table td:nth-child(2),
+  .items-table th:nth-child(2) {
+    width: 40% !important;
   }
-  .items-table td:nth-child(3) {
+  .items-table td:nth-child(3),
+  .items-table th:nth-child(3) {
     width: 14% !important;
+    text-align: right !important;
   }
-  .items-table td:nth-child(4) {
+  .items-table td:nth-child(4),
+  .items-table th:nth-child(4) {
     width: 20% !important;
+    text-align: right !important;
   }
-  .items-table td:nth-child(5) {
+  .items-table td:nth-child(5),
+  .items-table th:nth-child(5) {
     width: 20% !important;
+    text-align: right !important;
+  }
+  .items-table tr:first-child td,
+  .items-table thead td,
+  .items-table thead th {
+    background: #BBBBBB !important;
+    background-color: #BBBBBB !important;
+    font-weight: bold !important;
+  }
+  /* ── Totals table ── */
+  .totals-table td:first-child {
+    font-weight: bold !important;
+  }
+  .totals-table td:last-child {
+    text-align: right !important;
+    font-weight: bold !important;
+  }
+  /* ── Customer table: label columns (1st, 3rd) ── */
+  .customer-table td:nth-child(odd) {
+    font-weight: bold !important;
+    background: #BBBBBB !important;
+    background-color: #BBBBBB !important;
+  }
+  .customer-table td:nth-child(even) {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+  }
+  /* ── Delivery table: label columns (1st, 3rd) ── */
+  .delivery-table td:nth-child(odd) {
+    font-weight: bold !important;
+    background: #BBBBBB !important;
+    background-color: #BBBBBB !important;
+  }
+  .delivery-table td:nth-child(even) {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
   }
   /* Terms + signatory: allow flow; no extra space before block */
   .terms-sig-wrapper {
@@ -190,17 +234,25 @@ EXPORT_PRINT_CSS = """
   }
   .terms-sig-table,
   .terms-sig-table tr,
-  .terms-sig-table td {
+  .terms-sig-table td,
+  .terms-sig-table th,
+  .quotation-page .terms-sig-table,
+  .quotation-page .terms-sig-table tr,
+  .quotation-page .terms-sig-table td,
+  .quotation-page .terms-sig-table th {
     border: none !important;
+    border-width: 0 !important;
+    border-style: none !important;
     background: none !important;
+    background-color: transparent !important;
   }
   .terms-sig-table {
     page-break-inside: avoid !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
   }
-  /* No left padding on first column so 13–15 align with 1–12 */
-  .terms-sig-table td {
+  .terms-sig-table td,
+  .quotation-page .terms-sig-table td {
     padding: 0 !important;
   }
   .terms-sig-table td:first-child {

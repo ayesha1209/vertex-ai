@@ -130,7 +130,7 @@ def _flush_quotation_table(
     
     # Add colgroup for items table to control column widths
     if table_type == _Q_TABLE_ITEMS:
-        html_lines.append('<colgroup><col style="width:4%"/><col style="width:42%"/><col style="width:14%"/><col style="width:20%"/><col style="width:20%"/></colgroup>')
+        html_lines.append('<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/><col style="width:20%"/><col style="width:20%"/></colgroup>')
 
     for row_idx, row in enumerate(table_rows):
         # Split by pipe and keep all cells (including empty ones)
@@ -191,9 +191,10 @@ def _flush_quotation_table(
             # Use inline styles for header appearance
             if is_header:
                 # Items table header: gray background, bold, with column widths
-                col_widths = ["4%", "42%", "14%", "20%", "20%"]
+                col_widths = ["6%", "40%", "14%", "20%", "20%"]
                 width_style = f"width:{col_widths[col_idx]};" if col_idx < len(col_widths) else ""
-                style = f"border:{_B};{width_style}text-align:left;font-weight:bold;vertical-align:top;background-color:#BBBBBB;"
+                nowrap = "white-space:nowrap;" if col_idx == 0 else ""
+                style = f"border:{_B};{width_style}{nowrap}text-align:left;font-weight:bold;vertical-align:top;background-color:#BBBBBB;"
                 if col_idx >= 2:  # Right-align numeric headers
                     style = style.replace("text-align:left;", "text-align:right;")
                 html_lines.append(f'<td bgcolor="#BBBBBB" style="{style}"><b>{cell_content}</b></td>')
@@ -210,6 +211,8 @@ def _flush_quotation_table(
                     # Explicitly set white background for all non-header cells
                     base_style = _Q_TD_LABEL if col_idx in label_cols else _Q_TD
                     style = base_style + "background-color:#ffffff;"
+                if table_type == _Q_TABLE_ITEMS and col_idx == 0:
+                    style += "white-space:nowrap;"
                 # Right-align numeric columns in items table
                 if table_type == _Q_TABLE_ITEMS and col_idx >= 2:
                     style += "text-align:right;"
