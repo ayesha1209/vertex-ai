@@ -179,6 +179,10 @@ def assemble_separate_documents(
     multi_product = "," in (product_name or "").strip()
     q_html = text_to_html(quotation_text, compact=True, multi_product=multi_product)
     q_html = _fix_description_line_breaks(q_html)
+    # Always ensure the QUOTATION heading is present (AI sometimes includes it, sometimes not)
+    if not re.search(r"<h1[^>]*>\s*QUOTATION\s*</h1>", q_html, re.IGNORECASE):
+        q_heading = '<h1 style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;">QUOTATION</h1>'
+        q_html = q_heading + q_html
     q_html = QUOTATION_WRAPPER + q_html + QUOTATION_WRAPPER_END
     q_html = _ensure_currency_in_totals(q_html, local_export)
 

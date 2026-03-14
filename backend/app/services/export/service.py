@@ -245,42 +245,76 @@ def _get_footer_html() -> str:
 '''
 
 
+def _normalize_quotation_spacing(html: str) -> str:
+    """Remove stray spacer paragraphs between quotation tables so spacing is CSS-controlled and consistent."""
+    # Remove <p><br/></p> or <p>&nbsp;</p> that appear between </table> and <table>
+    html = re.sub(
+        r"(</table>)\s*(?:<p[^>]*>\s*(?:<br\s*/?>|&nbsp;)\s*</p>\s*)+(<table|<div|<h[1-6])",
+        r"\1\n\2",
+        html,
+        flags=re.IGNORECASE,
+    )
+    # Remove leading spacers before the first table in .quotation-page
+    html = re.sub(
+        r'(class="quotation-page"[^>]*>)\s*(?:<p[^>]*>\s*(?:<br\s*/?>|&nbsp;)\s*</p>\s*)+',
+        r"\1\n",
+        html,
+        flags=re.IGNORECASE,
+    )
+    return html
+
+
 def _prepare_body_for_export(html: str) -> str:
     """Run body normalization steps that are independent of currency/local_export."""
     body = _restore_quotation_format(html)
     body = _strip_currency_row_from_quotation(body)
     body = _normalize_body(body)
+    body = _normalize_quotation_spacing(body)
     return body
 
 
 def _ensure_dollar_prefix_in_export(html: str) -> str:
     """
-    When export is selected, prepend $ to amount cells that have no currency symbol,
-    so PDF shows e.g. '$9,250.00' instead of '9,250.00'. Only touches totals and items-table.
+    When export is selected, prepend $ to amount cells that have no currency symbol.
+    Handles totals-table and items-table. Totals cells may have <strong><b>...</b></strong> wrappers.
     """
     out = html
-    # Totals table: Total Amount cell — if the value is just a number, prepend $
+
+    def _add_dollar_to_totals(m: re.Match) -> str:
+        """Process totals-table: add $ before bare numbers inside value cells."""
+        before, body, after = m.group(1), m.group(2), m.group(3)
+        # Match <td ...> optionally followed by <strong>/<b> tags, then a bare number
+        body = re.sub(
+            r"(<td[^>]*>(?:\s*<(?:strong|b)>)*)(\s*)(?![\$₹]|Rs\.)(\d[\d,]*\.?\d+)",
+            r"\1\2$\3",
+            body,
+            flags=re.IGNORECASE,
+        )
+        return before + body + after
+
     out = re.sub(
-        r"(Total\s+Amount\s*</td>\s*<td[^>]*>)(\s*)(?![\$₹]|Rs\.)(\d[\d,]*\.?\d*)",
-        r"\1\2$\3",
+        r'(<table[^>]*class="[^"]*totals-table[^"]*"[^>]*>)(.*?)(</table>)',
+        _add_dollar_to_totals,
         out,
-        flags=re.IGNORECASE,
+        flags=re.DOTALL | re.IGNORECASE,
     )
-    # Items table: Unit Price / Unit Amount columns — amounts like 185,000.00 or 9250.00 (no symbol)
-    match = re.search(
-        r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>(.*?)</table>',
-        out,
-        re.DOTALL | re.IGNORECASE,
-    )
-    if match:
-        block = match.group(1)
-        # Prepend $ to <td> that contains only a number (with optional commas and .xx) and no symbol
-        new_block = re.sub(
+
+    def _add_dollar_to_items(m: re.Match) -> str:
+        """Process items-table: add $ before bare numbers in numeric cells."""
+        before, body, after = m.group(1), m.group(2), m.group(3)
+        body = re.sub(
             r"(<td[^>]*>)(\s*)(?![\$₹]|Rs\.)(\d[\d,]*\.\d{2})\s*</td>",
             r"\1\2$\3</td>",
-            block,
+            body,
         )
-        out = out[: match.start(1)] + new_block + out[match.end(1) :]
+        return before + body + after
+
+    out = re.sub(
+        r'(<table[^>]*class="[^"]*items-table[^"]*"[^>]*>)(.*?)(</table>)',
+        _add_dollar_to_items,
+        out,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
     return out
 
 

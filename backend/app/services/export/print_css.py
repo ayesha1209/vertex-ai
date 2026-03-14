@@ -123,7 +123,7 @@ EXPORT_PRINT_CSS = """
     margin: 0 0 4px 0 !important;
   }
   .quotation-page table {
-    margin: 1px 0 !important;
+    margin: 4px 0 !important;
     width: 100% !important;
   }
   .quotation-page th,
