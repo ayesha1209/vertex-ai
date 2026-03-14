@@ -254,10 +254,15 @@ export async function savePdf(id: string): Promise<void> {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.style.display = "none";
+  a.setAttribute("download", filename);
   document.body.appendChild(a);
   a.click();
-  a.remove();
-  window.URL.revokeObjectURL(url);
+  // Delay revoke so the browser has time to open Save As / start download
+  setTimeout(() => {
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  }, 200);
 }
 
 /** Save multiple documents as PDFs (one after another, with short delay). */

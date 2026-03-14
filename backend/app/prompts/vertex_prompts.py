@@ -265,6 +265,7 @@ No.|Description of Goods|Quantity|Unit Price|Unit Amount
 1|[Product Name] // Make: [Manufacturer] // HSN: [HSN Code - generate if unknown]|[Qty] [Unit]|[Price]|[Amount]
 ---TABLE---
 NOTE: Use // as separator in Description - each part will display on separate line (Product Name, then Make, then HSN).
+NOTE: For multiple products (comma-separated), use one row per product. If Qty is comma-separated (e.g. "100, 50, 25"), use first qty for first product, second for second, etc.
 
 === SECTION 4: TOTAL AMOUNT SECTION (simple rows) ===
 Total Amount|[Sum]
@@ -317,6 +318,7 @@ Use Company/Supplier as Make and in bank/signatory when Manufacturer is empty. W
 PORTS (MANDATORY for export): If PortLoad or PortUnload is empty, generate appropriate port names based on supplier location (Port of Loading) and buyer's Country/Address (Port of Discharge). Use major international ports - never leave ports as N/A for export orders.
 MULTIPLE PRODUCTS (MANDATORY): If Product field contains comma-separated items (e.g. "Sodium Carbonate, Urea Fertilizer Grade"):
 - You MUST create ONE quotation with ONE LINE ITEM PER PRODUCT in the items table. Two products = two rows (No. 1 and No. 2). Never put both products in a single row.
+- QUANTITY: When there are multiple products, the Qty field may be comma-separated in the same order as the products (e.g. Product "Caustic Soda, Sodium Bicarbonate, Urea" and Qty "100, 50, 25" → row 1: 100, row 2: 50, row 3: 25). Use the first quantity for the first product, second for second, and so on. If only one quantity is given, use it for the first product and generate reasonable quantities for the rest.
 - You MUST then output SEPARATE TDS, COA, MSDS for EACH product with the exact header format " - ProductName" (e.g. " - Sodium Carbonate" and " - Urea Fertilizer Grade"). Two products = two TDS blocks, two COA blocks, two MSDS blocks (6 blocks total after the quotation).
 1. QUOTATION: One line per product:
    No.|Description of Goods|Quantity|Unit Price|Unit Amount

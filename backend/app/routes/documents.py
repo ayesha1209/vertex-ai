@@ -11,7 +11,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from pymongo.errors import PyMongoError
 
-from app.db.mongo import TERMS_DOC_ID, documents_collection, now_local, terms_collection, to_object_id
+from app.db.mongo import TERMS_DOC_ID, documents_collection, manual_documents_collection, now_local, terms_collection, to_object_id
 from app.schemas.document import (
     BatchSummary,
     BulkDeleteRequest,
@@ -227,11 +227,22 @@ async def create_manual_document(payload: CreateManualDocumentRequest) -> Docume
         "payment_terms": None,
         "remarks": None,
     }
-    result = documents_collection.insert_one(mongo_doc)
-    inserted = documents_collection.find_one({"_id": result.inserted_id})
+    result = manual_documents_collection.insert_one(mongo_doc)
+    inserted = manual_documents_collection.find_one({"_id": result.inserted_id})
     if not inserted:
         raise HTTPException(status_code=500, detail="Failed to create document")
     return _serialize_mongo_doc(inserted)
+
+
+def _find_doc_by_id(oid: ObjectId) -> tuple[Any, str | None]:
+    """Return (doc, 'documents'|'manual_documents') or (None, None)."""
+    doc = documents_collection.find_one({"_id": oid})
+    if doc:
+        return doc, "documents"
+    doc = manual_documents_collection.find_one({"_id": oid})
+    if doc:
+        return doc, "manual_documents"
+    return None, None
 
 
 @router.post("/upload-preview", response_model=UploadPreviewResponse)
@@ -405,7 +416,8 @@ async def list_documents(
     if batch_id and batch_id.strip():
         query["batch_id"] = batch_id.strip()
     if manual:
-        query["batch_id"] = {"$regex": "^manual-", "$options": ""}
+        # Manual docs: only from manual_documents collection (separate dashboard)
+        query_manual_coll = {k: v for k, v in query.items() if k != "batch_id"}
     if from_date or to_date:
         date_filter: dict[str, Any] = {}
         if from_date:
@@ -422,18 +434,20 @@ async def list_documents(
                 pass
         if date_filter:
             query["created_at"] = date_filter
+            if manual:
+                query_manual_coll["created_at"] = date_filter
 
     try:
-        total = documents_collection.count_documents(query)
-        cursor = (
-            documents_collection.find(query)
-            .sort("created_at", -1)
-            .skip(skip)
-            .limit(min(limit, 100))
-        )
-        summaries: List[DocumentSummary] = []
-        for d in cursor:
-            summaries.append(
+        if manual:
+            # Manual docs dashboard: only manual_documents collection
+            total = manual_documents_collection.count_documents(query_manual_coll)
+            cursor = (
+                manual_documents_collection.find(query_manual_coll)
+                .sort("created_at", -1)
+                .skip(skip)
+                .limit(min(limit, 100))
+            )
+            summaries = [
                 DocumentSummary(
                     id=str(d["_id"]),
                     buyer_name=d["buyer_name"],
@@ -445,7 +459,31 @@ async def list_documents(
                     employee_name=d.get("employee_name"),
                     batch_id=d.get("batch_id"),
                 )
+                for d in cursor
+            ]
+            return ListDocumentsResponse(documents=summaries, total=total)
+        collection = documents_collection
+        total = collection.count_documents(query)
+        cursor = (
+            collection.find(query)
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(min(limit, 100))
+        )
+        summaries = [
+            DocumentSummary(
+                id=str(d["_id"]),
+                buyer_name=d["buyer_name"],
+                product_name=d["product_name"],
+                product_type=d["product_type"],
+                doc_type=d["doc_type"],
+                created_at=d["created_at"],
+                updated_at=d["updated_at"],
+                employee_name=d.get("employee_name"),
+                batch_id=d.get("batch_id"),
             )
+            for d in cursor
+        ]
         return ListDocumentsResponse(documents=summaries, total=total)
     except PyMongoError as e:
         # Return 200 with empty list so the app still loads; frontend can show warning
@@ -473,8 +511,11 @@ async def list_batches(
     skip: int = 0,
     limit: int = 50,
 ) -> ListBatchesResponse:
-    """List one row per batch for dashboard. Only documents with batch_id are grouped."""
-    match_query: dict[str, Any] = {"batch_id": {"$exists": True, "$nin": [None, ""]}}
+    """List one row per batch for dashboard. Only non-manual batches (manual docs have their own dashboard)."""
+    match_query: dict[str, Any] = {
+        "batch_id": {"$exists": True, "$nin": [None, ""]},
+        "$and": [{"batch_id": {"$not": {"$regex": "^manual-"}}}],
+    }
     if product_type and product_type in ("chemical", "engineering"):
         match_query["product_type"] = product_type
     if from_date or to_date:
@@ -590,19 +631,21 @@ async def delete_batch(batch_id: str) -> dict[str, int]:
 
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(doc_id: str) -> None:
-    """Delete a single document by id."""
+    """Delete a single document by id (checks both documents and manual_documents)."""
     try:
         oid = to_object_id(doc_id)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid id")
     result = documents_collection.delete_one({"_id": oid})
     if result.deleted_count == 0:
+        result = manual_documents_collection.delete_one({"_id": oid})
+    if result.deleted_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
 
 @router.delete("/documents", status_code=status.HTTP_200_OK)
 async def delete_documents_bulk(payload: BulkDeleteRequest) -> dict[str, int]:
-    """Delete multiple documents by ids. Returns deleted count."""
+    """Delete multiple documents by ids (checks both collections). Returns deleted count."""
     if not payload.ids:
         return {"deleted": 0}
     oids = []
@@ -613,8 +656,9 @@ async def delete_documents_bulk(payload: BulkDeleteRequest) -> dict[str, int]:
             continue
     if not oids:
         return {"deleted": 0}
-    result = documents_collection.delete_many({"_id": {"$in": oids}})
-    return {"deleted": result.deleted_count}
+    r1 = documents_collection.delete_many({"_id": {"$in": oids}})
+    r2 = manual_documents_collection.delete_many({"_id": {"$in": oids}})
+    return {"deleted": r1.deleted_count + r2.deleted_count}
 
 
 @router.get("/documents/{doc_id}", response_model=DocumentInDB)
@@ -625,7 +669,7 @@ async def get_document(doc_id: str) -> DocumentInDB:
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid id")
 
-    doc = documents_collection.find_one({"_id": oid})
+    doc, _ = _find_doc_by_id(oid)
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return _serialize_mongo_doc(doc)
@@ -692,7 +736,11 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> Docume
     if payload.employee_name is not None:
         set_fields["employee_name"] = payload.employee_name.strip() or None
 
-    res = documents_collection.find_one_and_update(
+    _, which = _find_doc_by_id(oid)
+    if not which:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    coll = manual_documents_collection if which == "manual_documents" else documents_collection
+    res = coll.find_one_and_update(
         {"_id": oid},
         {"$set": set_fields},
         return_document=True,
@@ -739,7 +787,7 @@ async def get_pdf(doc_id: str) -> Response:
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid id")
 
-    doc = documents_collection.find_one({"_id": oid})
+    doc, _ = _find_doc_by_id(oid)
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 

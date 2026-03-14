@@ -4,14 +4,6 @@ import { createManualDocument, listDocuments, deleteDocument } from "../lib/api"
 import { DashboardLayout } from "../components/layout/DashboardLayout";
 import type { DocumentSummary } from "../lib/types";
 
-const DOC_TYPE_LABELS: Record<string, string> = {
-  quotation: "Quotation",
-  tds: "TDS",
-  coa: "COA",
-  msds: "MSDS",
-  combined: "Combined",
-};
-
 function parseUtc(s: string): Date {
   if (!s.endsWith("Z") && !/[-+]\d{2}:?\d{2}$/.test(s)) return new Date(s + "Z");
   return new Date(s);
@@ -127,7 +119,6 @@ export function ManualDocPage() {
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Document Name</th>
                 <th className="px-4 py-3">Created by</th>
-                <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -135,12 +126,12 @@ export function ManualDocPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-slate-400">Loading…</td>
+                  <td colSpan={4} className="px-4 py-10 text-center text-slate-400">Loading…</td>
                 </tr>
               )}
               {!loading && docs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center">
+                  <td colSpan={4} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center gap-3 text-slate-400">
                       <svg className="h-10 w-10 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -165,11 +156,6 @@ export function ManualDocPage() {
                       ? doc.employee_name
                       : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 capitalize">
-                      {DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type}
-                    </span>
-                  </td>
                   <td className="px-4 py-3 text-xs text-slate-500">
                     {fmtDate(doc.created_at)}
                     <span className="ml-1.5 text-slate-400">{fmtTime(doc.created_at)}</span>
@@ -181,7 +167,7 @@ export function ManualDocPage() {
                         onClick={() => navigate(`/documents/${doc.id}`)}
                         className="btn-outline btn-xs"
                       >
-                        Open
+                        Edit
                       </button>
                       <button
                         type="button"
