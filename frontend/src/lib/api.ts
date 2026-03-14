@@ -197,12 +197,13 @@ export async function getDocument(id: string): Promise<DocumentInDB> {
 
 export async function updateDocument(
   id: string,
-  html_content: string
+  html_content: string,
+  meta?: { product_name?: string; employee_name?: string }
 ): Promise<DocumentInDB> {
   const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ html_content })
+    body: JSON.stringify({ html_content, ...meta })
   });
   if (!res.ok) {
     const error = await res.json().catch(() => null);

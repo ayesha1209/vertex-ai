@@ -185,6 +185,8 @@ class BulkDeleteRequest(BaseModel):
 
 class UpdateDocumentRequest(BaseModel):
     html_content: str
+    product_name: Optional[str] = None   # overwrite document title (manual docs)
+    employee_name: Optional[str] = None  # set creator name (manual docs)
 
 
 class GenerateRowRequest(BaseModel):

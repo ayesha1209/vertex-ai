@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getDocument, savePdf, updateDocument } from "../lib/api";
 import type { DocumentInDB } from "../lib/types";
 import { VertexEditor } from "../components/editor/VertexEditor";
 import { PageLayout } from "../components/ui/PageLayout";
+
+const IS_MANUAL = (doc: DocumentInDB) =>
+  (doc.batch_id ?? "").startsWith("manual-");
+
+const IS_UNNAMED = (doc: DocumentInDB) =>
+  IS_MANUAL(doc) && (doc.product_name === "Manual Document" || !doc.product_name?.trim());
 
 export function EditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +21,12 @@ export function EditorPage() {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Name modal state (shown on first save of a manual doc)
+  const [nameModal, setNameModal] = useState(false);
+  const [docTitle, setDocTitle] = useState("");
+  const [createdBy, setCreatedBy] = useState("");
+  const pendingSaveRef = useRef(false);
 
   const handleDownloadPdf = async () => {
     if (!doc || downloadingPdf) return;
@@ -44,17 +56,17 @@ export function EditorPage() {
     fetchDoc();
   }, [id]);
 
-  const handleSave = async () => {
+  const doSave = async (meta?: { product_name?: string; employee_name?: string }) => {
     if (!id || currentHtml == null) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      const updated = await updateDocument(id, currentHtml);
+      const updated = await updateDocument(id, currentHtml, meta);
       setDoc((prev) =>
-        prev ? { ...prev, updated_at: updated.updated_at } : updated
+        prev ? { ...prev, updated_at: updated.updated_at, product_name: updated.product_name, employee_name: updated.employee_name } : updated
       );
-      setSuccess("Document saved successfully.");
+      setSuccess("Document saved.");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to save document");
     } finally {
@@ -62,17 +74,44 @@ export function EditorPage() {
     }
   };
 
+  const handleSave = () => {
+    if (!doc) return;
+    // First save of an unnamed manual doc → show name modal
+    if (IS_UNNAMED(doc) && !pendingSaveRef.current) {
+      setDocTitle("");
+      setCreatedBy("");
+      setNameModal(true);
+      return;
+    }
+    doSave();
+  };
+
+  const handleNameConfirm = async () => {
+    pendingSaveRef.current = true;
+    setNameModal(false);
+    await doSave({
+      product_name: docTitle.trim() || "Untitled",
+      employee_name: createdBy.trim() || undefined,
+    });
+  };
+
   if (!id) {
     return <div className="page-container text-sm text-slate-600">Missing document id.</div>;
   }
 
+  const pageTitle = doc
+    ? IS_MANUAL(doc)
+      ? `${doc.product_name === "Manual Document" ? "Untitled" : doc.product_name}`
+      : `Edit ${doc.doc_type.toUpperCase()} – ${doc.buyer_name} / ${doc.product_name}`
+    : "Edit document";
+
   return (
     <PageLayout
-      title={doc ? `Edit ${doc.doc_type.toUpperCase()} – ${doc.buyer_name} / ${doc.product_name}` : "Edit document"}
+      title={pageTitle}
       subtitle={doc ? "Word-like editor with tables, bullets, and text formatting." : undefined}
       toolbar={
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-ghost" onClick={() => navigate("/documents")}>← Back</button>
+          <button type="button" className="btn-ghost" onClick={() => navigate(IS_MANUAL(doc!) ? "/manual" : "/documents")}>← Back</button>
           <button type="button" className="btn-outline" disabled={!doc || downloadingPdf} onClick={handleDownloadPdf}>{downloadingPdf ? "Saving…" : "PDF"}</button>
           <button type="button" className="btn-primary" onClick={handleSave} disabled={saving || !doc}>{saving ? "Saving…" : "Save"}</button>
         </div>
@@ -86,7 +125,57 @@ export function EditorPage() {
           <VertexEditor initialHtml={doc.html_content} onChange={(html) => setCurrentHtml(html)} />
         </div>
       )}
+
+      {/* Name modal — shown on first save of unnamed manual doc */}
+      {nameModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setNameModal(false); }}
+        >
+          <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
+            <div className="border-b border-slate-100 px-6 py-4">
+              <h2 className="text-base font-semibold text-slate-800">Save Document</h2>
+              <p className="mt-0.5 text-xs text-slate-500">Give this document a name before saving.</p>
+            </div>
+            <div className="flex flex-col gap-4 px-6 py-5">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-slate-600">Document Name <span className="text-red-500">*</span></span>
+                <input
+                  className="input input-sm"
+                  type="text"
+                  placeholder="e.g. Offer Letter – April 2026"
+                  value={docTitle}
+                  onChange={(e) => setDocTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && docTitle.trim() && handleNameConfirm()}
+                  autoFocus
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-slate-600">Created by</span>
+                <input
+                  className="input input-sm"
+                  type="text"
+                  placeholder="Your name (optional)"
+                  value={createdBy}
+                  onChange={(e) => setCreatedBy(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && docTitle.trim() && handleNameConfirm()}
+                />
+              </label>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-6 py-4">
+              <button type="button" onClick={() => setNameModal(false)} className="btn-ghost btn-sm">Cancel</button>
+              <button
+                type="button"
+                onClick={handleNameConfirm}
+                disabled={!docTitle.trim()}
+                className="btn-primary btn-sm"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageLayout>
   );
 }
-

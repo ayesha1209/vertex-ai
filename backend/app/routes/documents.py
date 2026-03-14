@@ -686,14 +686,15 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest) -> Docume
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid id")
 
+    set_fields: dict = {"html_content": payload.html_content, "updated_at": now_local()}
+    if payload.product_name is not None:
+        set_fields["product_name"] = payload.product_name.strip() or "Manual Document"
+    if payload.employee_name is not None:
+        set_fields["employee_name"] = payload.employee_name.strip() or None
+
     res = documents_collection.find_one_and_update(
         {"_id": oid},
-        {
-            "$set": {
-                "html_content": payload.html_content,
-                "updated_at": now_local(),
-            }
-        },
+        {"$set": set_fields},
         return_document=True,
     )
     if not res:

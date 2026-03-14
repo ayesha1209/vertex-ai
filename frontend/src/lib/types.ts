@@ -99,6 +99,8 @@ export interface DocumentInDB {
   html_content: string;
   created_at: string;
   updated_at: string;
+  employee_name?: string | null;
+  batch_id?: string | null;
 }
 
 export interface GenerateRowResponse {
