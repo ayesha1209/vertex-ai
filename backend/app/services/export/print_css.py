@@ -203,25 +203,21 @@ EXPORT_PRINT_CSS = """
     text-align: right !important;
     font-weight: bold !important;
   }
-  /* ── Customer table: label columns (1st, 3rd) ── */
+  /* ── Customer table: normal (no gray); labels stay bold ── */
+  .customer-table td {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+  }
   .customer-table td:nth-child(odd) {
     font-weight: bold !important;
-    background: #BBBBBB !important;
-    background-color: #BBBBBB !important;
   }
-  .customer-table td:nth-child(even) {
+  /* ── Delivery table: normal (no gray); labels stay bold ── */
+  .delivery-table td {
     background: #ffffff !important;
     background-color: #ffffff !important;
   }
-  /* ── Delivery table: label columns (1st, 3rd) ── */
   .delivery-table td:nth-child(odd) {
     font-weight: bold !important;
-    background: #BBBBBB !important;
-    background-color: #BBBBBB !important;
-  }
-  .delivery-table td:nth-child(even) {
-    background: #ffffff !important;
-    background-color: #ffffff !important;
   }
   /* Terms + signatory: allow flow; no extra space before block */
   .terms-sig-wrapper {

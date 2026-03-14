@@ -360,19 +360,25 @@ def _prepare_body_for_export(html: str) -> str:
     return body
 
 
+# Regex building blocks for currency normalization (used for both $ and Rs.)
+# After <td> allow optional <b>/<strong> so wrapped content is handled
+_CURRENCY_TD_OPEN = r"<td[^>]*>(?:\s*<(?:strong|b)>)*"
+# Number: optional commas, optional .X or .XX decimals (2850, 42.5, 42,750.00)
+_CURRENCY_NUM = r"\d[\d,]*(?:\.\d{1,2})?"
+
+
 def _ensure_dollar_prefix_in_export(html: str) -> str:
     """
-    When export is selected, prepend $ to amount cells that have no currency symbol.
-    Handles totals-table and items-table. Totals cells may have <strong><b>...</b></strong> wrappers.
+    When export is selected, prepend $ to every amount cell with no currency symbol.
+    Covers: totals-table (Total Amount), items-table (Unit Price, Unit Amount).
+    Handles optional <b>/<strong> wrappers and numbers with or without decimals.
     """
     out = html
 
     def _add_dollar_to_totals(m: re.Match) -> str:
-        """Process totals-table: add $ before bare numbers inside value cells."""
         before, body, after = m.group(1), m.group(2), m.group(3)
-        # Match <td ...> optionally followed by <strong>/<b> tags, then a bare number
         body = re.sub(
-            r"(<td[^>]*>(?:\s*<(?:strong|b)>)*)(\s*)(?![\$₹]|Rs\.)(\d[\d,]*\.?\d+)",
+            r"(" + _CURRENCY_TD_OPEN + r")(\s*)(?![\$₹]|Rs\.)(" + _CURRENCY_NUM + r")",
             r"\1\2$\3",
             body,
             flags=re.IGNORECASE,
@@ -387,12 +393,16 @@ def _ensure_dollar_prefix_in_export(html: str) -> str:
     )
 
     def _add_dollar_to_items(m: re.Match) -> str:
-        """Process items-table: add $ before bare numbers in numeric cells."""
         before, body, after = m.group(1), m.group(2), m.group(3)
+        # Amount cells only: number then optional </b></strong> then </td> (avoids "15 MT")
         body = re.sub(
-            r"(<td[^>]*>)(\s*)(?![\$₹]|Rs\.)(\d[\d,]*\.\d{2})\s*</td>",
-            r"\1\2$\3</td>",
+            r"(" + _CURRENCY_TD_OPEN + r")(\s*)"
+            + r"(?![\$₹]|Rs\.|No\.|Description|Quantity|Unit\s*Price|Unit\s*Amount)("
+            + _CURRENCY_NUM
+            + r")((\s*</(?:strong|b)>)*)\s*</td>",
+            r"\1\2$\3\4</td>",
             body,
+            flags=re.IGNORECASE,
         )
         return before + body + after
 
@@ -407,8 +417,10 @@ def _ensure_dollar_prefix_in_export(html: str) -> str:
 
 def _ensure_rupee_prefix_in_local(html: str) -> str:
     """
-    For local quotations, replace any stray $ signs before amounts with Rs.
-    Targets totals-table and items-table so regular text is untouched.
+    For local quotations:
+    - Replace any stray $ before amounts with Rs.
+    - Prepend Rs. to every bare number in totals-table and items-table (Total Amount, Unit Price, Unit Amount).
+    Same coverage as export ($): optional <b>/<strong>, numbers with or without decimals.
     """
     out = html
 
@@ -426,6 +438,45 @@ def _ensure_rupee_prefix_in_local(html: str) -> str:
     out = re.sub(
         r'(<table[^>]*class="[^"]*items-table[^"]*"[^>]*>)(.*?)(</table>)',
         _dollar_to_rs_in_table,
+        out,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # Prepend Rs. to bare numbers in totals-table (same pattern as export)
+    def _add_rs_to_totals(m: re.Match) -> str:
+        before, body, after = m.group(1), m.group(2), m.group(3)
+        body = re.sub(
+            r"(" + _CURRENCY_TD_OPEN + r")(\s*)(?![\$₹]|Rs\.)(" + _CURRENCY_NUM + r")",
+            r"\1\2Rs. \3",
+            body,
+            flags=re.IGNORECASE,
+        )
+        return before + body + after
+
+    out = re.sub(
+        r'(<table[^>]*class="[^"]*totals-table[^"]*"[^>]*>)(.*?)(</table>)',
+        _add_rs_to_totals,
+        out,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # Prepend Rs. to bare numbers in items-table (Unit Price, Unit Amount; same pattern as export)
+    def _add_rs_to_items(m: re.Match) -> str:
+        before, body, after = m.group(1), m.group(2), m.group(3)
+        body = re.sub(
+            r"(" + _CURRENCY_TD_OPEN + r")(\s*)"
+            + r"(?![\$₹]|Rs\.|No\.|Description|Quantity|Unit\s*Price|Unit\s*Amount)("
+            + _CURRENCY_NUM
+            + r")((\s*</(?:strong|b)>)*)\s*</td>",
+            r"\1\2Rs. \3\4</td>",
+            body,
+            flags=re.IGNORECASE,
+        )
+        return before + body + after
+
+    out = re.sub(
+        r'(<table[^>]*class="[^"]*items-table[^"]*"[^>]*>)(.*?)(</table>)',
+        _add_rs_to_items,
         out,
         flags=re.DOTALL | re.IGNORECASE,
     )
