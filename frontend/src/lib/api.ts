@@ -140,6 +140,7 @@ export async function listBatches(params?: {
   product_type?: "chemical" | "engineering";
   from_date?: string;
   to_date?: string;
+  entered_by?: string;
   skip?: number;
   limit?: number;
 }): Promise<ListBatchesResponse> {
@@ -148,11 +149,19 @@ export async function listBatches(params?: {
   if (params?.product_type) usp.set("product_type", params.product_type);
   if (params?.from_date) usp.set("from_date", params.from_date);
   if (params?.to_date) usp.set("to_date", params.to_date);
+  if (params?.entered_by?.trim()) usp.set("entered_by", params.entered_by.trim());
   if (params?.skip != null) usp.set("skip", String(params.skip));
   if (params?.limit != null) usp.set("limit", String(params.limit));
   const res = await fetch(`${API_BASE_URL}/documents/batches?${usp.toString()}`);
   if (!res.ok) throw new Error("Failed to list batches");
   return res.json();
+}
+
+export async function getEnteredByOptions(): Promise<string[]> {
+  const res = await fetch(`${API_BASE_URL}/documents/batches/entered-by`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 
 export async function deleteBatch(batchId: string): Promise<{ deleted: number }> {

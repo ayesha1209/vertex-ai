@@ -12,6 +12,7 @@ import {
   saveAllPdf,
   checkDatabaseHealth,
   deleteBatch,
+  getEnteredByOptions,
 } from "../lib/api";
 import { useActiveJob } from "../context/ActiveJobContext";
 import { useJobStream, getActiveJobId } from "../hooks/useJobStream";
@@ -44,6 +45,8 @@ export function DocumentsListPage() {
   const [toDate, setToDate] = useState("");
   const [appliedFromDate, setAppliedFromDate] = useState("");
   const [appliedToDate, setAppliedToDate] = useState("");
+  const [enteredByFilter, setEnteredByFilter] = useState("");
+  const [enteredByOptions, setEnteredByOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingAllPdf, setSavingAllPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +75,7 @@ export function DocumentsListPage() {
         product_type: productTypeFilter === "all" ? undefined : productTypeFilter,
         from_date: appliedFromDate.trim() || undefined,
         to_date: appliedToDate.trim() || undefined,
+        entered_by: enteredByFilter.trim() || undefined,
       });
       setBatches(Array.isArray(res.batches) ? res.batches : []);
       setTotal(typeof res.total === "number" ? res.total : 0);
@@ -85,9 +89,12 @@ export function DocumentsListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, productTypeFilter, appliedFromDate, appliedToDate]);
+  }, [page, search, productTypeFilter, appliedFromDate, appliedToDate, enteredByFilter]);
 
   useEffect(() => setPage(1), [productTypeFilter]);
+  useEffect(() => {
+    getEnteredByOptions().then(setEnteredByOptions);
+  }, []);
   useEffect(() => {
     fetchBatches(true);
   }, [fetchBatches]);
@@ -201,6 +208,24 @@ export function DocumentsListPage() {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5 text-sm text-slate-500">
+                <span className="shrink-0">Entered by</span>
+                <select
+                  value={enteredByFilter}
+                  onChange={(e) => {
+                    setEnteredByFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="input input-sm h-9 min-w-[120px] rounded-lg border-slate-200/90 bg-slate-50/50 sm:min-w-[140px]"
+                >
+                  <option value="">All</option>
+                  {enteredByOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="flex items-center gap-1.5 text-sm text-slate-500">
                 <span className="shrink-0">From</span>
                 <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="input input-sm h-9 w-28 rounded-lg border-slate-200/90 bg-slate-50/50 sm:w-32" />

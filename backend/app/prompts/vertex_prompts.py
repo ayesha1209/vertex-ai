@@ -48,7 +48,7 @@ DATA & CONTENT RULES (avoid incomplete/unprofessional output)
 • Minimize "N/A": use smart defaults where logical; use N/A only when there is no reasonable default.
 • Smart defaults when data is missing:
   - Quotation Date: use today's date (DD/MM/YYYY).
-  - Make / Manufacturer: For chemical products, always use "Vertex Chemicals" for Make. For non-chemical, use Company/Supplier name if Manufacturer is empty.
+  - Make / Manufacturer: For chemical products, always use "Vertex Chemical" for Make. For non-chemical, use Company/Supplier name if Manufacturer is empty.
   - HSN Code: If HSN code is not provided or empty, generate the correct HSN code for the product based on the product name and type. Look up or infer the appropriate HSN code for chemicals (e.g. 28361000 for sodium carbonate, 31021000 for urea). Never use "N/A" for HSN - always provide a valid code.
   - Port of Loading / Port of Discharge (MANDATORY for export): Generate based on supplier and buyer locations.
     * Port of Loading: Use the major port nearest to the supplier's country/region. For India: Kandla, Mundra, JNPT (Mumbai), Chennai. For China: Shanghai, Ningbo, Shenzhen. For Europe: Rotterdam, Hamburg, Antwerp.
@@ -72,7 +72,7 @@ DATA & CONTENT RULES (avoid incomplete/unprofessional output)
   - Export: USD only. Use "$" and "USD". Amount in words: use international number words — Thousand, Million, Billion (e.g. "One Million Two Hundred Fifty Thousand US Dollars Only"). Number format: 1,000.00 (international).
   - Domestic (INR): Use "₹" (rupee symbol) and "INR". Amount in words: use INDIAN number system ONLY — Lakh, Crore. Never use Million, Billion, or Thousand (in the Western sense) for INR. Examples: "Eighteen Lakh Fifty Thousand Rupees Only", "One Crore Twenty Five Lakh Rupees Only", "Fifty Lakh Rupees Only". End with "Rupees Only" or "Indian Rupees Only". Apply same currency to Unit Price, Amount, Total and Amount in Words.
 • Naming consistency:
-  - Use ONE canonical form for supplier/company name in the entire document (e.g. "Vertex Chemical Corporation" or "VERTEX CHEMICALS" as appropriate). Use the same product name in Quotation, TDS, COA, MSDS. Do not alternate between variants. For chemical products, Make in the item table must always be "Vertex Chemicals" — do not change it to any other name.
+  - Use ONE canonical form for supplier/company name in the entire document (e.g. "Vertex Chemical Corporation" or "VERTEX CHEMICALS" as appropriate). Use the same product name in Quotation, TDS, COA, MSDS. Do not alternate between variants. For chemical products, Make in the item table must always be "Vertex Chemical" — do not change it to any other name.
 • Typos and label accuracy (MANDATORY — avoid before output):
   - Spell company name, product name, and technical terms correctly and consistently. Do not introduce spelling variants (e.g. "Certificiate", "Sodiam", "Anhydrous" vs "Anhydrus"). Use the exact product/company names from the input data. Proofread numbers (CAS, HSN, quantities) for digit transposition.
   - Shipping labels: Use exact standard labels only. Write "Port of Loading" and "Port of Discharge" (never "Final Place of D Port of Discharge" or merged/garbled variants). Port of Discharge value = port name or country as appropriate (e.g. "Mumbai", "UAE"). Use "Final Place of Delivery" only if you need a separate field for destination city/country; otherwise use "Port of Discharge" with the correct value.
@@ -94,9 +94,9 @@ DATA & CONTENT RULES (avoid incomplete/unprofessional output)
     A) CENTER HEADER: QUOTATION (bold, centered, standalone - not in a table).
     B) MAIN CUSTOMER BLOCK: Two-column table with Left=Buyer Info (Bill To, GST No, Address, Ship To, Address) and Right=Quotation Info (Quotation No, Quotation Date, Buyer Reference No, then 3 empty rows).
     C) DELIVERY & BANK DETAILS: Four-column table with Left side=Delivery details and Right side=Bank details.
-    D) ITEM TABLE (exact columns): No.|Description of Goods|Quantity|Unit Price|Unit Amount. Description must be 3 lines: Product Name, Make: Vertex Chemicals (for chemical products — never use another name), HSN: [HSN Code].
+    D) ITEM TABLE (exact columns): No.|Description of Goods|Quantity|Unit Price|Unit Amount. Description must be 3 lines: Product Name, Make: Vertex Chemical (for chemical products — never use another name), HSN: [HSN Code].
     E) TOTAL AMOUNT SECTION: Total Amount row, Amount in Words row, NOTE row (keep NOTE empty).
-    F) SIGNATURE & TERMS: Two-column table with Left=Signature block (Authorized Signatory, Place & Date) and Right=Full Terms & Conditions list (15 numbered terms).
+    F) SIGNATURE & TERMS: Two-column table with Left=Signature block (Authorized Signatory, Date) and Right=Full Terms & Conditions list (15 numbered terms).
   - Spacing: minimal padding, tight line height, no large gaps. Do NOT output paragraphs; only structured table-style rows (Label|Value or header row then data rows). Final result must resemble a professional quotation on a single page.
   - Quotation table format: Use one clean pipe table per block. Items table must have exactly one header row then one data row per line item. No extra blank rows or merged labels inside cells; keep tables tidy and scannable.
 • TDS section order (mandatory):
@@ -262,7 +262,7 @@ NOTE: Bank details (right 2 columns) are FIXED — copy them EXACTLY as shown ab
 
 === SECTION 3: ITEM TABLE (Five Columns with header row) ===
 No.|Description of Goods|Quantity|Unit Price|Unit Amount
-1|[Product Name] // Make: Vertex Chemicals // HSN: [HSN Code - generate if unknown]|[Qty] [Unit]|[Price]|[Amount]
+1|[Product Name] // Make: Vertex Chemical // HSN: [HSN Code - generate if unknown]|[Qty] [Unit]|[Price]|[Amount]
 ---TABLE---
 NOTE: Use // as separator in Description - each part will display on separate line (Product Name, then Make, then HSN).
 NOTE: For multiple products (comma-separated), use one row per product. If Qty is comma-separated (e.g. "100, 50, 25"), use first qty for first product, second for second, etc.
@@ -292,7 +292,7 @@ TERMS & CONDITIONS:
 14. Seller not liable for delay due to Force Majeure circumstances.
 15. All disputes subject to Gujarat, India jurisdiction.
 AUTHORIZED SIGNATORY
-Place & Date: [Place], [Date]
+Date: [Date]
 ---TERMSBLOCK---
 """
 
@@ -314,7 +314,7 @@ SYSTEM_PROMPT = _build_system_prompt()
 
 USER_PROMPT_TEMPLATE = """Data (use if non-empty else generate with smart defaults): Company/Supplier={company_name} QuotationNo={quotation_no} Buyer={buyer_name} Product={product_name} Address={address} Country={country} Email={email_id} Contact={contact_no} Manufacturer={manufacturer_name} Desc={product_description} HSN={hsn_code} CAS={cas_no} Qty={quantity} Unit={unit} Packing={packing} Price={price} FOB/CIF={price_fob_cif} PortLoad={port_of_loading} PortUnload={port_of_unloading} Incoterm={incoterm} Payment={payment_terms} Remarks={remarks} Local/Export={local_export}
 CURRENCY (from Local/Export column — MANDATORY): If Local/Export=LOCAL (or Local): use ₹ (rupee symbol) and Rs in the quotation — Unit Price, Unit Amount, Total Amount, and Amount in Words must all use ₹ and "Rupees"/"INR". For Amount in Words with INR use INDIAN number system only: Lakh, Crore (e.g. "One Crore Eighty Five Lakh Rupees Only"). Never use Million, Billion or Western "Thousand" for Indian Rupee. If Local/Export=EXPORT (or Export): use $ and USD; Amount in Words with Thousand, Million, etc. (e.g. "Eighteen Million Five Hundred Thousand US Dollars Only"). Do NOT add a "Currency" or "Currency USD" row in the Delivery table. Never mix currencies; never include a Currency row in the quotation.
-For chemical products, always use Make: Vertex Chemicals in the item table; do not substitute another name. For non-chemical, use Company/Supplier as Make when Manufacturer is empty. Use Company/Supplier in bank/signatory when Manufacturer is empty. When Price is missing, generate a realistic unit price from the product, quantity, unit, and market (export/domestic per Local/Export above), then calculate Amount and Total and fill Amount in Words. Always fill pricing and amount in words. Minimize N/A; omit irrelevant COA rows; keep supplier and product names consistent. Ensure: no typos; supplier location matches Country/Address; COA "15 Test Parameters" has exactly 15 rows; MSDS Section 14 transport matches Section 2 hazard; product name wording matches content (e.g. LABSA / Sulphonic Acid → acid form only, never LAS/salt properties).
+For chemical products, always use Make: Vertex Chemical in the item table; do not substitute another name. For non-chemical, use Company/Supplier as Make when Manufacturer is empty. Use Company/Supplier in bank/signatory when Manufacturer is empty. When Price is missing, generate a realistic unit price from the product, quantity, unit, and market (export/domestic per Local/Export above), then calculate Amount and Total and fill Amount in Words. Always fill pricing and amount in words. Minimize N/A; omit irrelevant COA rows; keep supplier and product names consistent. Ensure: no typos; supplier location matches Country/Address; COA "15 Test Parameters" has exactly 15 rows; MSDS Section 14 transport matches Section 2 hazard; product name wording matches content (e.g. LABSA / Sulphonic Acid → acid form only, never LAS/salt properties).
 PORTS (MANDATORY for export): If PortLoad or PortUnload is empty, generate appropriate port names based on supplier location (Port of Loading) and buyer's Country/Address (Port of Discharge). Use major international ports - never leave ports as N/A for export orders.
 MULTIPLE PRODUCTS (MANDATORY): If Product field contains comma-separated items (e.g. "Sodium Carbonate, Urea Fertilizer Grade"):
 - You MUST create ONE quotation with ONE LINE ITEM PER PRODUCT in the items table. Two products = two rows (No. 1 and No. 2). Never put both products in a single row.
@@ -322,8 +322,8 @@ MULTIPLE PRODUCTS (MANDATORY): If Product field contains comma-separated items (
 - You MUST then output SEPARATE TDS, COA, MSDS for EACH product with the exact header format " - ProductName" (e.g. " - Sodium Carbonate" and " - Urea Fertilizer Grade"). Two products = two TDS blocks, two COA blocks, two MSDS blocks (6 blocks total after the quotation).
 1. QUOTATION: One line per product:
    No.|Description of Goods|Quantity|Unit Price|Unit Amount
-   1|[Product1] // Make: Vertex Chemicals // HSN: [HSN1]|[Qty1] [Unit]|[Price1]|[Amount1]
-   2|[Product2] // Make: Vertex Chemicals // HSN: [HSN2]|[Qty2] [Unit]|[Price2]|[Amount2]
+   1|[Product1] // Make: Vertex Chemical // HSN: [HSN1]|[Qty1] [Unit]|[Price1]|[Amount1]
+   2|[Product2] // Make: Vertex Chemical // HSN: [HSN2]|[Qty2] [Unit]|[Price2]|[Amount2]
    Calculate Total Amount = sum of all amounts. Amount in Words for total.
 2. QUOTATION must always include SECTION 5: TERMS & CONDITIONS and signatory (same as single-product). After the items table and Total Amount, output:
    === SECTION 5: TERMS & CONDITIONS ===
@@ -332,7 +332,7 @@ MULTIPLE PRODUCTS (MANDATORY): If Product field contains comma-separated items (
    1. ... (all 15 numbered terms)
    15. All disputes subject to Gujarat, India jurisdiction.
    AUTHORIZED SIGNATORY
-   Place & Date: [Place], [Date]
+   Date: [Date]
    ---TERMSBLOCK---
    Then output in order, one block per product (repeat for Product2, Product3, etc.):
    # TECHNICAL DATA SHEET (TDS) - Product1
@@ -347,4 +347,4 @@ MULTIPLE PRODUCTS (MANDATORY): If Product field contains comma-separated items (
    [full COA for Product2]
    # MATERIAL SAFETY DATA SHEET (MSDS) - Product2
    [full MSDS for Product2]
-Output order: # QUOTATION (including TERMS & CONDITIONS and AUTHORIZED SIGNATORY / Place & Date before ---TERMSBLOCK---), then # TDS, # COA, # MSDS for each product. QUOTATION must be ONE PAGE only: pipe tables only, compact spacing. Use --- between subsections for horizontal rules in PDF."""
+Output order: # QUOTATION (including TERMS & CONDITIONS and AUTHORIZED SIGNATORY / Date before ---TERMSBLOCK---), then # TDS, # COA, # MSDS for each product. QUOTATION must be ONE PAGE only: pipe tables only, compact spacing. Use --- between subsections for horizontal rules in PDF."""

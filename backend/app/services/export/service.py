@@ -258,6 +258,26 @@ def _normalize_declaration_spacing(html: str) -> str:
     return result
 
 
+def _normalize_place_and_date_to_date(html: str) -> str:
+    """Replace 'Place & Date: Place, DD/MM/YYYY' with 'Date: DD/MM/YYYY' (show date only)."""
+    # Match "Place & Date:" or "Place &amp; Date:" then optional place and comma, then capture date
+    pattern = re.compile(
+        r"Place\s*&\s*(?:amp;)?\s*Date\s*:\s*([^<]+?)(?=<|$)",
+        re.IGNORECASE,
+    )
+
+    def _repl(m: Match) -> str:
+        rest = (m.group(1) or "").strip()
+        if "," in rest:
+            # "Mumbai, 26/03/2026" -> take part after last comma
+            date_part = rest.rsplit(",", 1)[-1].strip()
+        else:
+            date_part = rest
+        return f"Date: {date_part}" if date_part else "Date:"
+
+    return pattern.sub(_repl, html)
+
+
 def _get_header_footer_css() -> str:
     """Generate CSS for header and footer."""
     return """
@@ -314,17 +334,10 @@ def _get_header_html() -> str:
 
 
 def _get_footer_html() -> str:
-    """Generate footer HTML for PDF using xhtml2pdf pdf:template."""
-    footer_logo = _get_logo_base64(_FOOTER_LOGO)
-    return f'''
+    """Generate footer HTML for PDF using xhtml2pdf pdf:template (separator line only, no logo)."""
+    return '''
 <div id="footer_content" style="display:none;">
-    <table style="width:100%; border:none; border-collapse:collapse; border-top:3px solid #333;">
-        <tr>
-            <td style="width:55px; border:none; padding:5px 2px 2px 2px; vertical-align:middle;">
-                <img src="{footer_logo}" style="width:50px; height:auto;"/>
-            </td>
-        </tr>
-    </table>
+    <div style="border-top:3px solid #333; width:100%;"></div>
 </div>
 '''
 
@@ -468,13 +481,14 @@ def _inject_signature_image(html: str) -> str:
 
 
 def _prepare_body_for_export(html: str) -> str:
-    """Run body normalization steps that are independent of currency/local_export."""
+    """Run body normalization steps that are independent of currency/local_export.
+    Note: signature injection is done AFTER currency normalization in html_to_pdf
+    to prevent the currency regex from corrupting the base64 image data."""
     body = _restore_quotation_format(html)
     body = _strip_currency_row_from_quotation(body)
     body = _normalize_body(body)
     body = _normalize_quotation_spacing(body)
     body = _force_terms_sig_borders_off(body)
-    body = _inject_signature_image(body)
     return body
 
 
@@ -660,14 +674,8 @@ def _header_footer_tables(
 </table>
 <hr class="hf-line hf-line-header"/>'''
 
-    footer_table = f'''<hr class="hf-line hf-line-footer"/>
-<table class="hf-table">
-<tr>
-<td style="padding:3px 4px; vertical-align:middle;">
-<img src="{footer_logo}" width="40" height="36"/>
-</td>
-</tr>
-</table>'''
+    footer_table = '''<hr class="hf-line hf-line-footer"/>
+'''
     return header_table, footer_table
 
 
@@ -939,9 +947,10 @@ def _normalize_inline_styles(html: str) -> str:
 
 
 def _normalize_body(html: str) -> str:
-    """Apply print-layout normalization: Unicode sub/superscript, declaration spacing, then styles, page-breaks, tables."""
+    """Apply print-layout normalization: Unicode sub/superscript, declaration spacing, place&date→date, then styles, page-breaks, tables."""
     html = _normalize_unicode_sub_superscript(html)
     html = _normalize_declaration_spacing(html)
+    html = _normalize_place_and_date_to_date(html)
     html = _normalize_inline_styles(html)
     html = re.sub(
         r'<div\s+style="[^"]*page-break[^"]*"[^>]*>\s*</div>',
@@ -992,6 +1001,9 @@ def html_to_pdf(html: str, letterhead: Optional[str] = None, local_export: Optio
     """
     body_html = _prepare_body_for_export(html)
     body_html = _normalize_currency_for_export(body_html, local_export)
+    # Inject signature AFTER currency normalization so the base64 image data
+    # is never processed by the Rs→$ regex (which would corrupt the base64).
+    body_html = _inject_signature_image(body_html)
 
     full_html_weasy = _build_full_html_for_weasyprint(body_html, letterhead)
     pdf_bytes: Optional[bytes] = _pdf_weasyprint(full_html_weasy)

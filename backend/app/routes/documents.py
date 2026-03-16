@@ -472,12 +472,33 @@ async def list_documents(
         )
 
 
+@router.get("/documents/batches/entered-by")
+async def list_batches_entered_by() -> list[str]:
+    """Return distinct 'entered by' (employee_name) values for dashboard filter dropdown."""
+    try:
+        pipeline: List[dict[str, Any]] = [
+            {"$match": {"$and": [
+                {"batch_id": {"$exists": True, "$nin": [None, ""]}},
+                {"batch_id": {"$not": {"$regex": "^manual-"}}},
+            ]}},
+            {"$group": {"_id": "$employee_name"}},
+            {"$match": {"_id": {"$nin": [None, ""]}}},
+            {"$sort": {"_id": 1}},
+            {"$project": {"_id": 0, "name": "$_id"}},
+        ]
+        cursor = documents_collection.aggregate(pipeline)
+        return [str(d.get("name", "")) for d in cursor if d.get("name")]
+    except PyMongoError:
+        return []
+
+
 @router.get("/documents/batches", response_model=ListBatchesResponse)
 async def list_batches(
     q: str | None = None,
     product_type: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    entered_by: str | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> ListBatchesResponse:
@@ -488,6 +509,8 @@ async def list_batches(
     }
     if product_type and product_type in ("chemical", "engineering"):
         match_query["product_type"] = product_type
+    if entered_by and entered_by.strip():
+        match_query["employee_name"] = entered_by.strip()
     if from_date or to_date:
         date_filter: dict[str, Any] = {}
         if from_date:

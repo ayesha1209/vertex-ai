@@ -145,12 +145,12 @@ _BANK_DETAIL_VALUES = {
 }
 
 
-# For chemical products, Make in item descriptions must always be "Vertex Chemicals"
-_MAKE_VERTEX_CHEMICALS = "Vertex Chemicals"
+# For chemical products, Make in item descriptions must always be "Vertex Chemical"
+_MAKE_VERTEX_CHEMICAL = "Vertex Chemical"
 
 
 def _force_make_vertex_chemicals(html: str) -> str:
-    """In the items-table, replace any Make: ... with Make: Vertex Chemicals.
+    """In the items-table, replace any Make: ... with Make: Vertex Chemical.
     Stops at HTML tags (<br/>, </td>, etc.) so line breaks are preserved."""
     match = re.search(
         r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>.*?</table>',
@@ -163,7 +163,7 @@ def _force_make_vertex_chemicals(html: str) -> str:
     # Stop match at < (HTML tag) so <br/> between Make and HSN lines is preserved
     new_block = re.sub(
         r"Make\s*:\s*[^<]*",
-        "Make: " + _MAKE_VERTEX_CHEMICALS,
+        "Make: " + _MAKE_VERTEX_CHEMICAL,
         block,
         flags=re.IGNORECASE,
     )
