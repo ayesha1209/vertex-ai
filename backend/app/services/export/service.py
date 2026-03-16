@@ -23,6 +23,23 @@ _FOOTER_LOGO = _ASSETS_DIR / "footer_logo.png"
 _ICON_LOCATION = _ASSETS_DIR / "location.png"
 _ICON_PHONE = _ASSETS_DIR / "phone.png"
 _ICON_EMAIL = _ASSETS_DIR / "mail.png"
+_SIGNATURE_IMG = _ASSETS_DIR / "IMG-20260316-WA0003-removebg-preview.png"
+
+# Signature image loaded once at import time — embedded as base64 so it survives production deploys
+# and is injected at PDF export time (not stored in HTML, so TipTap edits can't strip it).
+def _load_sig_tag() -> str:
+    try:
+        if _SIGNATURE_IMG.exists():
+            b64 = base64.b64encode(_SIGNATURE_IMG.read_bytes()).decode()
+            return (
+                f'<img src="data:image/png;base64,{b64}" '
+                f'style="height:65px; width:auto;" />'
+            )
+    except Exception:
+        pass
+    return ""
+
+_SIG_TAG = _load_sig_tag()
 
 
 def _get_logo_base64(path: Path) -> str:
@@ -415,6 +432,41 @@ def _force_terms_sig_borders_off(html: str) -> str:
     return html[:tbl_start] + chunk + html[end_table:]
 
 
+def _inject_signature_image(html: str) -> str:
+    """Inject the authorized-signatory stamp image right before the AUTHORIZED SIGNATORY line.
+    Runs at PDF export time — immune to TipTap stripping <img> tags on save.
+    """
+    # Load dynamically in case module-level load failed (e.g. file added after startup)
+    sig_tag = _SIG_TAG
+    if not sig_tag:
+        sig_tag = _load_sig_tag()
+    if not sig_tag:
+        return html
+
+    upper = html.upper()
+    auth_pos = upper.find("AUTHORIZED SIGNATORY")
+    if auth_pos == -1:
+        return html
+
+    # Skip if an <img> is already present within 500 chars before "AUTHORIZED SIGNATORY"
+    nearby = html[max(0, auth_pos - 500): auth_pos]
+    if "<img" in nearby.lower():
+        return html
+
+    sig_block = (
+        f'<div style="text-align:right; display:block; width:100%;">'
+        f'{sig_tag}'
+        f'</div>'
+    )
+
+    # Walk back to the nearest opening <p tag before "AUTHORIZED SIGNATORY"
+    p_pos = html.rfind("<p", 0, auth_pos)
+    if p_pos == -1:
+        return html[:auth_pos] + sig_block + html[auth_pos:]
+
+    return html[:p_pos] + sig_block + html[p_pos:]
+
+
 def _prepare_body_for_export(html: str) -> str:
     """Run body normalization steps that are independent of currency/local_export."""
     body = _restore_quotation_format(html)
@@ -422,6 +474,7 @@ def _prepare_body_for_export(html: str) -> str:
     body = _normalize_body(body)
     body = _normalize_quotation_spacing(body)
     body = _force_terms_sig_borders_off(body)
+    body = _inject_signature_image(body)
     return body
 
 

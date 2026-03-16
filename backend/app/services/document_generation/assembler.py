@@ -150,7 +150,8 @@ _MAKE_VERTEX_CHEMICALS = "Vertex Chemicals"
 
 
 def _force_make_vertex_chemicals(html: str) -> str:
-    """In the items-table, replace any Make: ... with Make: Vertex Chemicals."""
+    """In the items-table, replace any Make: ... with Make: Vertex Chemicals.
+    Stops at HTML tags (<br/>, </td>, etc.) so line breaks are preserved."""
     match = re.search(
         r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>.*?</table>',
         html,
@@ -159,12 +160,12 @@ def _force_make_vertex_chemicals(html: str) -> str:
     if not match:
         return html
     block = match.group(0)
-    # Replace Make: <anything> with Make: Vertex Chemicals (anything = until // or HSN: or <)
+    # Stop match at < (HTML tag) so <br/> between Make and HSN lines is preserved
     new_block = re.sub(
-        r"Make\s*:\s*(?:(?!//|HSN\s*:).)*",
-        "Make: " + _MAKE_VERTEX_CHEMICALS + " ",
+        r"Make\s*:\s*[^<]*",
+        "Make: " + _MAKE_VERTEX_CHEMICALS,
         block,
-        flags=re.IGNORECASE | re.DOTALL,
+        flags=re.IGNORECASE,
     )
     if new_block == block:
         return html
