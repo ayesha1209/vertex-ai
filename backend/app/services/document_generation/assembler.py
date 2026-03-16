@@ -145,6 +145,32 @@ _BANK_DETAIL_VALUES = {
 }
 
 
+# For chemical products, Make in item descriptions must always be "Vertex Chemicals"
+_MAKE_VERTEX_CHEMICALS = "Vertex Chemicals"
+
+
+def _force_make_vertex_chemicals(html: str) -> str:
+    """In the items-table, replace any Make: ... with Make: Vertex Chemicals."""
+    match = re.search(
+        r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>.*?</table>',
+        html,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        return html
+    block = match.group(0)
+    # Replace Make: <anything> with Make: Vertex Chemicals (anything = until // or HSN: or <)
+    new_block = re.sub(
+        r"Make\s*:\s*(?:(?!//|HSN\s*:).)*",
+        "Make: " + _MAKE_VERTEX_CHEMICALS + " ",
+        block,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if new_block == block:
+        return html
+    return html[: match.start()] + new_block + html[match.end() :]
+
+
 def _force_bank_details(html: str) -> str:
     """In the delivery-table, overwrite bank-detail value cells with fixed constants.
     The table has 4 columns per row: DeliveryLabel | DeliveryValue | BankLabel | BankValue.
@@ -283,6 +309,8 @@ def assemble_separate_documents(
         q_html = q_heading + q_html
     q_html = QUOTATION_WRAPPER + q_html + QUOTATION_WRAPPER_END
     q_html = _force_bank_details(q_html)
+    if product_type == ProductType.chemical:
+        q_html = _force_make_vertex_chemicals(q_html)
     q_html = _ensure_currency_in_totals(q_html, local_export)
 
     letterhead_val = letterhead.strip().lower() if (letterhead and isinstance(letterhead, str)) else None

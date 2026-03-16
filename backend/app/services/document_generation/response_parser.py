@@ -3,11 +3,45 @@ Parse AI response into sections and convert to clean HTML for PDF/DOCX.
 We control formatting: inline styles only (PDF-engine safe), semantic tags, table headers.
 """
 
+import base64
 import logging
 import re
 from html import escape
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Signature image — loaded once at import time as inline base64 (works local + production)
+_SIGNATURE_IMG_PATH = Path(__file__).parent.parent.parent / "assets" / "logos" / "IMG-20260316-WA0003-removebg-preview.png"
+
+def _load_signature_img_tag() -> str:
+    """Return an <img> tag with the signature as inline base64, or empty string if not found."""
+    try:
+        if _SIGNATURE_IMG_PATH.exists():
+            data = _SIGNATURE_IMG_PATH.read_bytes()
+            b64 = base64.b64encode(data).decode()
+            return (
+                f'<img src="data:image/png;base64,{b64}" '
+                f'style="height:40px; max-width:120px; display:block; margin-left:auto; margin-bottom:2px;" />'
+            )
+    except Exception:
+        pass
+    return ""
+
+_SIGNATURE_IMG_TAG = _load_signature_img_tag()
+
+
+def _render_signature_lines(html_lines: list, signature_lines: list, style_prefix: str = "") -> None:
+    """Append signature img + text lines to html_lines. Image is shown above AUTHORIZED SIGNATORY text."""
+    if _SIGNATURE_IMG_TAG:
+        html_lines.append(_SIGNATURE_IMG_TAG)
+    for ln in signature_lines:
+        parts = [p.strip() for p in ln.split("|") if p.strip()]
+        for part in parts:
+            html_lines.append(f"<p style=\"{style_prefix}text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
+        if not parts:
+            html_lines.append(f"<p style=\"{style_prefix}text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+
 
 # Section markers in output order: Quotation → TDS → COA → MSDS
 MARKER_QUOTATION = "# QUOTATION"
@@ -319,12 +353,7 @@ def _render_terms_block(
             html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
         html_lines.append("</div></td>")
         html_lines.append('<td style="width:40%; border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0; page-break-before:avoid !important;">')
-        for ln in signature_lines:
-            parts = [p.strip() for p in ln.split("|") if p.strip()]
-            for part in parts:
-                html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
-            if not parts:
-                html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+        _render_signature_lines(html_lines, signature_lines)
         html_lines.append("</div></td></tr></table>")
     elif terms_lower:
         html_lines.append('<div class="terms-section" style="width:100%;">')
@@ -333,12 +362,7 @@ def _render_terms_block(
         html_lines.append("</div>")
     elif signature_lines:
         html_lines.append('<div class="signatory-block" style="text-align:right; margin-top:4px; page-break-before:avoid !important;">')
-        for ln in signature_lines:
-            parts = [p.strip() for p in ln.split("|") if p.strip()]
-            for part in parts:
-                html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
-            if not parts:
-                html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+        _render_signature_lines(html_lines, signature_lines)
         html_lines.append("</div>")
     html_lines.append("</div>")
     return i
@@ -463,12 +487,7 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
                         html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
                     html_lines.append("</div></td>")
                     html_lines.append('<td style="width:40%; border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0; page-break-before:avoid !important;">')
-                    for ln in signature_lines:
-                        parts = [p.strip() for p in ln.split("|") if p.strip()]
-                        for part in parts:
-                            html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
-                        if not parts:
-                            html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+                    _render_signature_lines(html_lines, signature_lines)
                     html_lines.append("</div></td></tr></table>")
                 elif terms_lower:
                     html_lines.append('<div class="terms-section" style="width:100%;">')
@@ -477,12 +496,7 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
                     html_lines.append("</div>")
                 elif signature_lines:
                     html_lines.append('<div class="signatory-block" style="text-align:right; margin-top:4px; page-break-before:avoid !important;">')
-                    for ln in signature_lines:
-                        parts = [p.strip() for p in ln.split("|") if p.strip()]
-                        for part in parts:
-                            html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(part)}</strong></p>")
-                        if not parts:
-                            html_lines.append(f"<p style=\"text-align:right; margin:2px 0; display:block;\"><strong>{escape(ln)}</strong></p>")
+                    _render_signature_lines(html_lines, signature_lines)
                     html_lines.append("</div>")
                 html_lines.append("</div>")
             else:

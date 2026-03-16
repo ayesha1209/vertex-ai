@@ -306,9 +306,6 @@ def _get_footer_html() -> str:
             <td style="width:55px; border:none; padding:5px 2px 2px 2px; vertical-align:middle;">
                 <img src="{footer_logo}" style="width:50px; height:auto;"/>
             </td>
-            <td style="border:none; padding:5px 2px 2px 10px; vertical-align:middle;">
-                <p style="font-size:7px; color:#555; margin:0; padding:0;">206/5, Signet Hub, Akshar Chowk, Vadodara-390020 &nbsp;|&nbsp; +91 99095 51658 &nbsp;|&nbsp; sales@vertexchemical.in</p>
-            </td>
         </tr>
     </table>
 </div>
@@ -591,8 +588,8 @@ def _header_footer_tables(
     header_logo: str,
     footer_logo: str,
 ) -> tuple[str, str]:
-    """Build header and footer table HTML. Logo sizes and contact cell tuned to avoid truncation (e.g. website URL)."""
-    h_phone, h_web, footer_address, footer_mobile, footer_web = _header_footer_vars(letterhead)
+    """Build header and footer table HTML."""
+    h_phone, h_web, _footer_address, _footer_mobile, _footer_web = _header_footer_vars(letterhead)
     header_table = f'''<table class="hf-table">
 <tr>
 <td style="width:60px; padding:2px 4px; vertical-align:middle;">
@@ -613,17 +610,8 @@ def _header_footer_tables(
     footer_table = f'''<hr class="hf-line hf-line-footer"/>
 <table class="hf-table">
 <tr>
-<td style="width:45px; padding:3px 4px; vertical-align:middle;">
+<td style="padding:3px 4px; vertical-align:middle;">
 <img src="{footer_logo}" width="40" height="36"/>
-</td>
-<td style="width:33%; padding:3px 6px; vertical-align:middle; text-align:left; word-wrap:break-word; overflow-wrap:break-word;">
-<p style="font-size:6pt; color:#555; margin:0; padding:0; line-height:1.3;">{footer_address}</p>
-</td>
-<td style="width:34%; padding:3px 6px; vertical-align:middle; text-align:center;">
-<p style="font-size:6pt; color:#555; margin:0; padding:0; line-height:1.3;">{footer_mobile}</p>
-</td>
-<td style="width:33%; padding:3px 6px; vertical-align:middle; text-align:right; word-wrap:break-word; overflow-wrap:break-word;">
-<p style="font-size:6pt; color:#555; margin:0; padding:0; line-height:1.3;">{footer_web}</p>
 </td>
 </tr>
 </table>'''
