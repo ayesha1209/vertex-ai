@@ -49,7 +49,7 @@ DATA & CONTENT RULES (avoid incomplete/unprofessional output)
 • Smart defaults when data is missing:
   - Quotation Date: use today's date (DD/MM/YYYY).
   - Make / Manufacturer: For chemical products, always use "Vertex Chemical" for Make. For non-chemical, use Company/Supplier name if Manufacturer is empty.
-  - HSN Code: If HSN code is not provided or empty, generate the correct HSN code for the product based on the product name and type. Look up or infer the appropriate HSN code for chemicals (e.g. 28361000 for sodium carbonate, 31021000 for urea). Never use "N/A" for HSN - always provide a valid code.
+  - HSN Code: When HSN code IS provided in the input data, use it EXACTLY as given — do not modify, "correct", or replace it. When HSN is not provided or empty, generate the correct HSN code for the product based on the product name and type (e.g. 28361000 for sodium carbonate, 31021000 for urea). Never use "N/A" for HSN — always provide a valid code.
   - Port of Loading / Port of Discharge (MANDATORY for export): Generate based on supplier and buyer locations.
     * Port of Loading: Use the major port nearest to the supplier's country/region. For India: Kandla, Mundra, JNPT (Mumbai), Chennai. For China: Shanghai, Ningbo, Shenzhen. For Europe: Rotterdam, Hamburg, Antwerp.
     * Port of Discharge: Use the major port nearest to the buyer's country/region. Examples: UAE → Jebel Ali; Netherlands/Europe → Rotterdam; USA East → New York/Newark; USA West → Los Angeles; UK → Felixstowe; Singapore → Singapore; Australia → Melbourne/Sydney.
@@ -110,8 +110,8 @@ NEVER write: "from ai", or placeholder text like "guessed value".
 --------------------------------------------------
 TABLE FORMAT (MANDATORY — prevents broken alignment in PDF)
 All tabular data MUST be output as pipe-separated rows. One line = one table row; columns separated by |.
-• Correct: Quotation No|AC/001/26/02
-• Wrong: "Quotation No" on one line and "AC/001/26/02" on the next (that breaks tables).
+• Correct: Quotation No|AC/001/26/02 (always output the Quotation No value from the data; never leave it blank or use "-" or "N/A").
+• Wrong: "Quotation No" on one line and "AC/001/26/02" on the next (that breaks tables). Wrong: Quotation No|- or Quotation No|N/A — use the provided number.
 Use exactly one line per row. After the last row of a table, output a line with ---TABLE--- or --- so the converter knows where the table ends. Do NOT use plain line breaks instead of pipes for columns; that causes "up-down" misalignment. Every block must use Label|Value or Header1|Header2|... format with pipes on the same line.
 
 --------------------------------------------------
@@ -310,9 +310,68 @@ Date: [Date]
     return "\n".join(parts)
 
 
-SYSTEM_PROMPT = _build_system_prompt()
+def _build_tech_docs_only_system_prompt() -> str:
+    """
+    Reduced system prompt for single-product TDS/COA/MSDS calls only.
+    Omits the quotation reference block to cut input tokens and lower API cost
+    when generating many products (one call per product).
+    """
+    coa = get_coa_template()
+    tds = get_tds_template()
+    msds = get_msds_template()
 
-USER_PROMPT_TEMPLATE = """Data (use if non-empty else generate with smart defaults): Company/Supplier={company_name} QuotationNo={quotation_no} Buyer={buyer_name} Product={product_name} Address={address} Country={country} Email={email_id} Contact={contact_no} Manufacturer={manufacturer_name} Desc={product_description} HSN={hsn_code} CAS={cas_no} Qty={quantity} Unit={unit} Packing={packing} Price={price} FOB/CIF={price_fob_cif} PortLoad={port_of_loading} PortUnload={port_of_unloading} Incoterm={incoterm} Payment={payment_terms} Remarks={remarks} Local/Export={local_export}
+    rules = """You are an Export Chemical Documentation Compliance AI. You generate ONLY: TDS, COA, MSDS (no Quotation).
+
+Output exactly THREE sections in this order. Each section must start with its marker on a new line (include the product name after the marker, e.g. "# TECHNICAL DATA SHEET (TDS) - Product Name"):
+# TECHNICAL DATA SHEET (TDS) - [Product Name]
+# CERTIFICATE OF ANALYSIS (COA) - [Product Name]
+# MATERIAL SAFETY DATA SHEET (MSDS) - [Product Name]
+
+CRITICAL:
+1. Copy each REFERENCE structure below character for character. Same section titles, same table headers and rows, same bullet points. Only replace [bracketed] placeholders.
+2. Use a line containing only --- (three dashes) to separate major subsections within a section. Do not put --- before the three section markers above.
+3. Do not add or remove any row, column, or section. In TDS, keep sections in strict order 1, 2, 3, 4, 5, 6, 7, 8 with each section's content directly under its heading. COA "15 Test Parameters" must have exactly 15 table rows. MSDS Section 3: only Component|CAS No.|Concentration table; Section 14 transport must match Section 2 hazard and physical form.
+4. Use provided values when given; if empty, generate with smart defaults (see DATA & CONTENT RULES). Apply EXPORT/DOMESTIC rules where relevant. Never output "from ai". Include only data that applies to the current product; omit any reference line that describes a different compound or chemical form.
+5. Product identity: formula, CAS, appearance, hazard must match the product name (e.g. LABSA / Sulphonic Acid → acid form only; LAS / Sulphonate → salt form only). MSDS Section 14 must match Section 2 and physical form. Fix typos; supplier location vs Country of Origin must match.
+"""
+    rules += "\n" + COMPLIANCE_RULES + "\n"
+
+    parts = [rules]
+    if tds:
+        parts.append("\n--- TDS REFERENCE (copy exactly; use --- between sections) ---\n")
+        parts.append(tds)
+    if coa:
+        parts.append("\n--- COA REFERENCE (copy exactly; use --- after product block and after table before Conclusion) ---\n")
+        parts.append(coa)
+    if msds:
+        parts.append("\n--- MSDS REFERENCE (copy exactly; use --- between sections) ---\n")
+        parts.append(msds)
+
+    return "\n".join(parts)
+
+
+SYSTEM_PROMPT = _build_system_prompt()
+SYSTEM_PROMPT_TECH_DOCS_ONLY = _build_tech_docs_only_system_prompt()
+
+# Template for a single-product TDS/COA/MSDS call (used when splitting multi-product rows).
+# The quotation is generated in a separate call; this call only produces the three technical docs.
+SINGLE_PRODUCT_TECH_DOCS_TEMPLATE = """Generate ONLY the three technical documents for the single product below.
+Output exactly THREE sections in this order (no quotation):
+# TECHNICAL DATA SHEET (TDS) - {product_name}
+# CERTIFICATE OF ANALYSIS (COA) - {product_name}
+# MATERIAL SAFETY DATA SHEET (MSDS) - {product_name}
+
+Product data: Company/Supplier={company_name} Buyer={buyer_name} Product={product_name} Country={country} Manufacturer={manufacturer_name} HSN={hsn_code} CAS={cas_no} Qty={quantity} Unit={unit} Local/Export={local_export}
+
+Follow ALL compliance, chemical accuracy, and formatting rules from the system prompt.
+COA must have exactly 15 test parameters rows.
+MSDS Section 14 (Transport) must match Section 2 (Hazard).
+Use correct chemical formula, CAS, and physical form for THIS product only."""
+
+USER_PROMPT_TEMPLATE = """Data (use if non-empty else generate with smart defaults): Company/Supplier={company_name} QuotationNo={quotation_no} Buyer={buyer_name} Product={product_name} Address={address} Country={country} Email={email_id} Contact={contact_no} Manufacturer={manufacturer_name} Desc={product_description} HSN={hsn_code} CAS={cas_no} Qty={quantity} Unit={unit} Packing={packing} Price={price} FOB/CIF={price_fob_cif} PortLoad={port_of_loading} PortUnload={port_of_unloading} Incoterm={incoterm} Payment={payment_terms} Remarks={remarks} Local/Export={local_export} Date={quotation_date}
+QUOTATION NO (MANDATORY): The Quotation No value above is always filled (auto-generated if not in Excel). In the quotation table, put this exact value in the cell next to "Quotation No". Never output "Quotation No|-" or "Quotation No|N/A" or leave it blank.
+HSN (MANDATORY when provided): When HSN is non-empty in the data above, use it EXACTLY in the item table Description (e.g. HSN: 1007 90 00). Do not change digits or spacing.
+DATE (MANDATORY): If Date above is non-empty, use it exactly as provided (DD/MM/YYYY format) for the "Quotation Date" cell in Section 1 customer block AND for the "Date:" line in the AUTHORIZED SIGNATORY block. Do NOT substitute today's date if a Date value is given.
 CURRENCY (from Local/Export column — MANDATORY): If Local/Export=LOCAL (or Local): use ₹ (rupee symbol) and Rs in the quotation — Unit Price, Unit Amount, Total Amount, and Amount in Words must all use ₹ and "Rupees"/"INR". For Amount in Words with INR use INDIAN number system only: Lakh, Crore (e.g. "One Crore Eighty Five Lakh Rupees Only"). Never use Million, Billion or Western "Thousand" for Indian Rupee. If Local/Export=EXPORT (or Export): use $ and USD; Amount in Words with Thousand, Million, etc. (e.g. "Eighteen Million Five Hundred Thousand US Dollars Only"). Do NOT add a "Currency" or "Currency USD" row in the Delivery table. Never mix currencies; never include a Currency row in the quotation.
 For chemical products, always use Make: Vertex Chemical in the item table; do not substitute another name. For non-chemical, use Company/Supplier as Make when Manufacturer is empty. Use Company/Supplier in bank/signatory when Manufacturer is empty. When Price is missing, generate a realistic unit price from the product, quantity, unit, and market (export/domestic per Local/Export above), then calculate Amount and Total and fill Amount in Words. Always fill pricing and amount in words. Minimize N/A; omit irrelevant COA rows; keep supplier and product names consistent. Ensure: no typos; supplier location matches Country/Address; COA "15 Test Parameters" has exactly 15 rows; MSDS Section 14 transport matches Section 2 hazard; product name wording matches content (e.g. LABSA / Sulphonic Acid → acid form only, never LAS/salt properties).
 PORTS (MANDATORY for export): If PortLoad or PortUnload is empty, generate appropriate port names based on supplier location (Port of Loading) and buyer's Country/Address (Port of Discharge). Use major international ports - never leave ports as N/A for export orders.

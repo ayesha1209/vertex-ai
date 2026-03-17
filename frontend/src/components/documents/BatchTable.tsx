@@ -2,6 +2,39 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { BatchSummary } from "../../lib/types";
 
+function ProductPills({ value, max = 3 }: { value: string; max?: number }) {
+  const products = value
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (products.length <= 1) {
+    return <span className="text-slate-700">{value || "—"}</span>;
+  }
+
+  const visible = products.slice(0, max);
+  const extra = products.length - max;
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {visible.map((p, i) => (
+        <span
+          key={i}
+          className="inline-block max-w-[160px] truncate rounded-full bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-700 border border-teal-100"
+          title={p}
+        >
+          {p}
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">
+          +{extra} more
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Parse API timestamp as UTC when no timezone suffix (backend stores UTC). */
 function parseUtc(dateStr: string): Date {
   const s = dateStr.trim();
@@ -159,8 +192,8 @@ export function BatchTable({
                     <td className="px-3 py-3 font-medium text-slate-800 sm:px-6 sm:py-4">
                       {batch.buyer_name}
                     </td>
-                    <td className="px-3 py-3 text-slate-700 sm:px-6 sm:py-4">
-                      {batch.product_name}
+                    <td className="px-3 py-3 sm:px-6 sm:py-4">
+                      <ProductPills value={batch.product_name} />
                     </td>
                     <td className="px-3 py-3 text-slate-600 sm:px-6 sm:py-4">
                       {batch.employee_name ?? "—"}
@@ -238,11 +271,17 @@ export function BatchTable({
             </div>
             {DETAIL_LABELS.map(({ key, label }) => {
               const val = detailsBatch[key];
-              const display = key === "buyer_name" || key === "product_name" ? (val ?? "—") : (val ?? "—");
+              const strVal = String(val ?? "");
               return (
                 <div key={key} className="flex gap-3">
                   <dt className="w-28 shrink-0 font-medium text-slate-500">{label}</dt>
-                  <dd className="min-w-0 break-words text-slate-800">{display}</dd>
+                  <dd className="min-w-0 text-slate-800">
+                    {key === "product_name" && strVal.includes(",") ? (
+                      <ProductPills value={strVal} max={20} />
+                    ) : (
+                      <span className="break-words">{strVal || "—"}</span>
+                    )}
+                  </dd>
                 </div>
               );
             })}

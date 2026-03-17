@@ -55,6 +55,8 @@ PRODUCT_CANDIDATES = ["Product name", "Product Name", "product name"]
 
 # Optional enquiry columns (Excel header -> RowPreview field)
 ENQUIRY_MAP = [
+    # Which docs to generate: e.g. "q,tds,coa,msds" (empty → all)
+    ("doc_types", ["Docs", "docs", "Doc types", "Doc Types", "Documents", "Docs to generate"]),
     ("date", ["date", "Date", "Invoice Date", "invoice date", "Order Date", "order date", "Enquiry Date", "enquiry date"]),
     ("Employee Name", ["Employee Name", "employee name"]),
     ("Company Name", ["Company Name", "company name"]),
@@ -87,13 +89,16 @@ ENQUIRY_MAP = [
 ]
 
 
-def parse_excel_to_previews(upload_file: UploadFile) -> List[RowPreview]:
+def parse_excel_to_previews(upload_file: UploadFile, max_rows: int = 500) -> List[RowPreview]:
+    """Parse Excel/CSV into RowPreview list. Raises HTTPException on bad file or missing columns."""
     filename = upload_file.filename or ""
     try:
         if filename.lower().endswith(".csv"):
-            df = pd.read_csv(upload_file.file)
+            df = pd.read_csv(upload_file.file, nrows=max_rows)
         else:
             df = pd.read_excel(upload_file.file)
+            if len(df) > max_rows:
+                df = df.iloc[:max_rows]
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -139,6 +144,7 @@ def parse_excel_to_previews(upload_file: UploadFile) -> List[RowPreview]:
                 id=int(idx),
                 buyer_name=buyer_name,
                 product_name=product_name,
+                doc_types=get("doc_types"),
                 date=date_str,
                 employee_name=get("Employee Name"),
                 company_name=get("Company Name"),
@@ -178,4 +184,7 @@ def parse_excel_to_previews(upload_file: UploadFile) -> List[RowPreview]:
             detail="No valid rows found (need non-empty Buyer Name and Product name).",
         )
 
+    if len(previews) >= max_rows:
+        # Caller may want to know we truncated
+        pass  # Still return previews; optional: add warning in response later
     return previews

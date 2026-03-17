@@ -31,20 +31,38 @@ export function setActiveJobId(jobId: string | null): void {
   else sessionStorage.setItem(ACTIVE_JOB_KEY, jobId);
 }
 
+export interface RowProgress {
+  row_index: number;
+  buyer_name: string;
+  product_name: string;
+  doc_count: number;
+  done: boolean;
+}
+
+export interface JobProgress {
+  total_rows: number;
+  current_row_index: number | null;
+  rows: RowProgress[];
+}
+
 export type JobStreamState =
   | { status: "connecting" }
-  | { status: "streaming"; documents: DocumentSummary[] }
-  | { status: "done"; documents: DocumentSummary[] }
+  | { status: "queued"; message?: string }
+  | { status: "streaming"; documents: DocumentSummary[]; progress: JobProgress }
+  | { status: "done"; documents: DocumentSummary[]; progress: JobProgress }
   | { status: "error"; message: string };
+
+const EMPTY_PROGRESS: JobProgress = { total_rows: 0, current_row_index: null, rows: [] };
 
 export function useJobStream(
   jobId: string | null,
   onDone?: () => void
 ): [JobStreamState, { stop: () => void }] {
   const [state, setState] = useState<JobStreamState>(
-    jobId ? { status: "connecting" } : { status: "done", documents: [] }
+    jobId ? { status: "connecting" } : { status: "done", documents: [], progress: EMPTY_PROGRESS }
   );
   const docsRef = useRef<DocumentSummary[]>([]);
+  const progressRef = useRef<JobProgress>({ ...EMPTY_PROGRESS });
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   const esRef = useRef<EventSource | null>(null);
@@ -54,7 +72,7 @@ export function useJobStream(
     import("../lib/api").then(({ cancelJob }) => cancelJob(jobId).catch(() => {}));
     esRef.current?.close();
     esRef.current = null;
-    setState({ status: "done", documents: docsRef.current });
+    setState({ status: "done", documents: docsRef.current, progress: progressRef.current });
     setActiveJobId(null);
     onDoneRef.current?.();
   }, [jobId]);
@@ -65,6 +83,7 @@ export function useJobStream(
       return;
     }
     docsRef.current = [];
+    progressRef.current = { ...EMPTY_PROGRESS };
     setState({ status: "connecting" });
 
     const url = getJobStreamUrl(jobId);
@@ -97,13 +116,81 @@ export function useJobStream(
     es.onmessage = (e) => {
       clearConnectTimeout();
       try {
-        const data = JSON.parse(e.data) as { type: string; doc?: Record<string, unknown> };
-        if (data.type === "document" && data.doc) {
+        const data = JSON.parse(e.data) as {
+          type: string;
+          doc?: Record<string, unknown>;
+          total_rows?: number;
+          row_index?: number;
+          buyer_name?: string;
+          product_name?: string;
+        };
+
+        if (data.type === "queued") {
+          setState({
+            status: "queued",
+            message: (data as { message?: string }).message ?? "Waiting in queue…",
+          });
+        } else if (data.type === "start") {
+          progressRef.current = {
+            total_rows: data.total_rows ?? 0,
+            current_row_index: null,
+            rows: [],
+          };
+          setState({ status: "streaming", documents: docsRef.current, progress: { ...progressRef.current } });
+
+        } else if (data.type === "row_start") {
+          const p = progressRef.current;
+          // Mark previous row as done
+          const prevIdx = p.current_row_index;
+          const rows = p.rows.map((r) =>
+            r.row_index === prevIdx ? { ...r, done: true } : r
+          );
+          // Add new row entry
+          const newRow: RowProgress = {
+            row_index: data.row_index ?? rows.length,
+            buyer_name: data.buyer_name ?? "",
+            product_name: data.product_name ?? "",
+            doc_count: 0,
+            done: false,
+          };
+          progressRef.current = {
+            total_rows: data.total_rows ?? p.total_rows,
+            current_row_index: data.row_index ?? null,
+            rows: [...rows, newRow],
+          };
+          setState({ status: "streaming", documents: docsRef.current, progress: { ...progressRef.current } });
+
+        } else if (data.type === "document" && data.doc) {
           const doc = data.doc as DocumentSummary;
           docsRef.current = [...docsRef.current, doc];
-          setState({ status: "streaming", documents: docsRef.current });
+          // Increment doc count for current row
+          const p = progressRef.current;
+          const curIdx = p.current_row_index;
+          if (curIdx !== null) {
+            progressRef.current = {
+              ...p,
+              rows: p.rows.map((r) =>
+                r.row_index === curIdx ? { ...r, doc_count: r.doc_count + 1 } : r
+              ),
+            };
+          }
+          setState({ status: "streaming", documents: docsRef.current, progress: { ...progressRef.current } });
+
+        } else if (data.type === "error") {
+          setState({
+            status: "error",
+            message: (data as { message?: string }).message ?? "Stream error",
+          });
+          es.close();
         } else if (data.type === "done") {
-          setState({ status: "done", documents: docsRef.current });
+          // Mark last row as done
+          const p = progressRef.current;
+          progressRef.current = {
+            ...p,
+            current_row_index: null,
+            rows: p.rows.map((r) => ({ ...r, done: true })),
+          };
+          setState({ status: "done", documents: docsRef.current, progress: { ...progressRef.current } });
           es.close();
           setActiveJobId(null);
           onDoneRef.current?.();

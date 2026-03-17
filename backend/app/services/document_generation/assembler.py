@@ -149,6 +149,44 @@ _BANK_DETAIL_VALUES = {
 _MAKE_VERTEX_CHEMICAL = "Vertex Chemical"
 
 
+def _inject_quotation_no(html: str, quotation_no: str | None) -> str:
+    """Replace the value cell next to 'Quotation No' in the customer table with the given number.
+    Ensures the quotation never shows '-' or N/A when we have a generated number.
+    """
+    if not quotation_no or not str(quotation_no).strip():
+        return html
+    safe = escape(str(quotation_no).strip())
+    # Customer table: label cell "Quotation No" followed by value cell; replace value cell content
+    pattern = re.compile(
+        r"(<td[^>]*>\s*Quotation\s+No\s*</td>\s*<td[^>]*>)([^<]*)(</td>)",
+        re.IGNORECASE,
+    )
+    return pattern.sub(rf"\g<1>{safe}\g<3>", html)
+
+
+def _inject_hsn_in_items(html: str, hsn_code: str | None, product_name: str) -> str:
+    """When HSN is provided and single product, replace HSN value in items table with it.
+    Ensures Excel-provided HSN is used exactly and not altered by the model.
+    """
+    if not hsn_code or not str(hsn_code).strip():
+        return html
+    # Only inject when single product (no comma); multi-product would need per-row HSN
+    if "," in (product_name or "").strip():
+        return html
+    safe = escape(str(hsn_code).strip())
+    # Within items-table only, replace "HSN: anything" with "HSN: {safe}"
+    pattern = re.compile(
+        r"(<table[^>]*class=[^>]*items-table[^>]*>)(.*?)(</table>)",
+        re.DOTALL | re.IGNORECASE,
+    )
+    return pattern.sub(
+        lambda m: m.group(1)
+        + re.sub(r"HSN\s*:\s*[^<]*", "HSN: " + safe, m.group(2), flags=re.IGNORECASE)
+        + m.group(3),
+        html,
+    )
+
+
 def _force_make_vertex_chemicals(html: str) -> str:
     """In the items-table, replace any Make: ... with Make: Vertex Chemical.
     Stops at HTML tags (<br/>, </td>, etc.) so line breaks are preserved."""
@@ -290,6 +328,7 @@ def assemble_separate_documents(
     quotation_no: str | None = None,
     company_name: str | None = None,
     local_export: str | None = None,
+    hsn_code: str | None = None,
     quantity: str | None = None,
     unit: str | None = None,
     country: str | None = None,
@@ -313,6 +352,11 @@ def assemble_separate_documents(
     if product_type == ProductType.chemical:
         q_html = _force_make_vertex_chemicals(q_html)
     q_html = _ensure_currency_in_totals(q_html, local_export)
+    if quotation_no:
+        q_html = _inject_quotation_no(q_html, quotation_no)
+    hsn_stripped = str(hsn_code).strip() if hsn_code else ""
+    if hsn_stripped:
+        q_html = _inject_hsn_in_items(q_html, hsn_stripped, product_name)
 
     letterhead_val = letterhead.strip().lower() if (letterhead and isinstance(letterhead, str)) else None
     local_export_val = local_export.strip().lower() if (local_export and isinstance(local_export, str)) else None

@@ -1,8 +1,27 @@
 """Build user prompt for document generation from row data."""
 
+from datetime import datetime
+
 from app.prompts.vertex_prompts import USER_PROMPT_TEMPLATE
 from app.schemas.document import RowPreview
 from app.utils.quotation_number import generate_quotation_no
+
+
+def _format_date(date_str: str | None) -> str:
+    """Convert ISO date (YYYY-MM-DD) to DD/MM/YYYY for the prompt.
+
+    Falls back to returning the raw string if parsing fails so the AI still
+    receives whatever value was in the Excel sheet.
+    """
+    if not date_str:
+        return ""
+    raw = date_str.strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%d/%m/%Y")
+        except ValueError:
+            continue
+    return raw  # return as-is if unrecognised format
 
 
 def build_user_prompt(row: RowPreview) -> str:
@@ -10,6 +29,7 @@ def build_user_prompt(row: RowPreview) -> str:
     quotation_no = (row.quotation_no or "").strip() or generate_quotation_no(row.company_name)
     company_name = (row.company_name or "").strip() or ""
     local_export = (row.local_export or "").strip() or ""
+    quotation_date = _format_date(row.date)
     return USER_PROMPT_TEMPLATE.format(
         company_name=company_name,
         quotation_no=quotation_no,
@@ -34,4 +54,5 @@ def build_user_prompt(row: RowPreview) -> str:
         payment_terms=(row.payment_terms or "").strip() or "",
         remarks=(row.remarks or "").strip() or "",
         local_export=local_export or "(use Export if country not India else Local)",
+        quotation_date=quotation_date,
     )

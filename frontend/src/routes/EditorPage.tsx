@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getDocument, savePdf, updateDocument } from "../lib/api";
+import { getDocument, savePdf, updateDocument, deleteDocument } from "../lib/api";
 import type { DocumentInDB } from "../lib/types";
 import { VertexEditor } from "../components/editor/VertexEditor";
 import { PageLayout } from "../components/ui/PageLayout";
+import { ConfirmModal } from "../components/ui/ConfirmModal";
 
 const IS_MANUAL = (doc: DocumentInDB) =>
   (doc.batch_id ?? "").startsWith("manual-");
@@ -26,6 +27,8 @@ export function EditorPage() {
   const [docTitle, setDocTitle] = useState("");
   const [createdBy, setCreatedBy] = useState("");
   const pendingSaveRef = useRef(false);
+  const [discardModalOpen, setDiscardModalOpen] = useState(false);
+  const [discardLoading, setDiscardLoading] = useState(false);
 
   const handleDownloadPdf = () => {
     if (!doc) return;
@@ -106,13 +109,25 @@ export function EditorPage() {
       : `Edit ${doc.doc_type.toUpperCase()} – ${doc.buyer_name} / ${doc.product_name}`
     : "Edit document";
 
+  const handleBack = async () => {
+    if (!doc) {
+      navigate("/documents");
+      return;
+    }
+    if (IS_MANUAL(doc) && IS_UNNAMED(doc)) {
+      setDiscardModalOpen(true);
+      return;
+    }
+    navigate(IS_MANUAL(doc) ? "/manual" : "/documents");
+  };
+
   return (
     <PageLayout
       title={pageTitle}
       subtitle={doc ? "Word-like editor with tables, bullets, and text formatting." : undefined}
       toolbar={
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-ghost" onClick={() => navigate(IS_MANUAL(doc!) ? "/manual" : "/documents")}>← Back</button>
+          <button type="button" className="btn-ghost" onClick={handleBack}>← Back</button>
           <button type="button" className="btn-outline" disabled={!doc} onClick={handleDownloadPdf}>PDF</button>
           <button type="button" className="btn-primary" onClick={handleSave} disabled={saving || !doc}>{saving ? "Saving…" : "Save"}</button>
         </div>
@@ -177,6 +192,40 @@ export function EditorPage() {
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={discardModalOpen}
+        title="Discard manual document?"
+        message={
+          <p>
+            This manual document has not been named or saved yet.{" "}
+            <strong>If you discard it, it will be deleted.</strong>
+          </p>
+        }
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        variant="danger"
+        loading={discardLoading}
+        onCancel={() => {
+          if (discardLoading) return;
+          setDiscardModalOpen(false);
+        }}
+        onConfirm={async () => {
+          if (!doc) {
+            setDiscardModalOpen(false);
+            return;
+          }
+          setDiscardLoading(true);
+          try {
+            await deleteDocument(doc.id);
+          } catch {
+            // ignore error, still navigate away
+          } finally {
+            setDiscardLoading(false);
+            setDiscardModalOpen(false);
+            navigate("/manual");
+          }
+        }}
+      />
     </PageLayout>
   );
 }

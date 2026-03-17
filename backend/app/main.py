@@ -1,14 +1,23 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.db.mongo import client
-from app.routes.documents import router as documents_router
+from app.routes.documents import router as documents_router, start_batch_workers, stop_batch_workers
 
 # Enable logging
 logging.basicConfig(level=logging.INFO, format='%(name)s - %(levelname)s - %(message)s')
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start batch queue workers on startup; stop them on shutdown."""
+    start_batch_workers()
+    yield
+    await stop_batch_workers()
 
 
 def create_app() -> FastAPI:
@@ -17,6 +26,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Vertex COA & Quotation Generator",
         version="1.0.0",
+        lifespan=lifespan,
     )
 
     app.add_middleware(

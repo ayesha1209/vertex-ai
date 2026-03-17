@@ -100,11 +100,29 @@ export function recalcQuotationTotals(html: string): string {
     for (const row of totalRows) {
       const tds = row.querySelectorAll("td");
       const label = (tds[0]?.textContent || "").trim().toLowerCase();
-      if (label.includes("total amount") && tds[1]) {
+      if (label.includes("total amount") && tds.length > 0) {
         const newTotalStr = formatAmount(total, currency);
-        if ((tds[1].textContent || "").trim() !== newTotalStr) {
-          tds[1].innerHTML = newTotalStr;
+
+        // Prefer the explicit value column when it exists (2nd cell),
+        // otherwise update the last cell in the row.
+        const valueCellIndex = tds.length > 1 ? 1 : tds.length - 1;
+        const valueCell = tds[valueCellIndex];
+
+        if ((valueCell.textContent || "").trim() !== newTotalStr) {
+          valueCell.innerHTML = newTotalStr;
           changed = true;
+        }
+
+        // Optional: clean the label cell so it does not duplicate the number
+        // e.g. turn "Total Amount Rs. 2,400,000.00" into just "Total Amount"
+        const labelCell = tds[0];
+        const labelText = labelCell.textContent || "";
+        if (/\d/.test(labelText)) {
+          const cleaned = "Total Amount";
+          if (labelCell.textContent !== cleaned) {
+            labelCell.textContent = cleaned;
+            changed = true;
+          }
         }
         break;
       }

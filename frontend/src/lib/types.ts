@@ -1,11 +1,12 @@
 export type ProductType = "chemical" | "engineering";
 
-export type DocumentType = "quotation" | "coa" | "coc" | "tds" | "msds" | "combined";
+export type DocumentType = "quotation" | "coa" | "coc" | "tds" | "msds" | "combined" | "proforma_invoice" | "invoice";
 
 export interface RowPreview {
   id: number;
   buyer_name: string;
   product_name: string;
+  doc_types?: string | null;
   quantity?: string | null;
   unit?: string | null;
   country?: string | null;

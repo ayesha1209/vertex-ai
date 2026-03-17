@@ -1,12 +1,13 @@
 import asyncio
 import json
+import time
 import uuid
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 from queue import Empty, Queue
 from typing import Any, List
 
 from bson import ObjectId
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from pymongo.errors import PyMongoError
 
@@ -31,6 +32,9 @@ from app.schemas.document import (
 )
 from app.prompts.vertex_prompts import DEFAULT_TERMS
 from app.services.document_generation import generate_documents_for_row
+from app.services.export import html_to_pdf
+from app.services.invoice_generator import transform_quotation_to_invoice
+from app.utils.excel_parser import parse_excel_to_previews
 
 
 def _strip_signatory_from_terms(text: str) -> str:
@@ -42,16 +46,156 @@ def _strip_signatory_from_terms(text: str) -> str:
     if idx == -1:
         idx = upper.find("AUTHORIZED SIGNED")
     if idx != -1:
-        # Keep only content before the signatory block; trim trailing newlines/spaces
         text = text[:idx].rstrip()
     return text
-from app.services.export import html_to_pdf
-from app.utils.excel_parser import parse_excel_to_previews
 
-# In-memory job store: job_id -> {"status": "running"|"done", "queue": Queue, "cancelled": bool}
+
+# ---------------------------------------------------------------------------
+# In-memory job store and batch queue
+# job_id -> {"status": "queued"|"running"|"done", "queue": Queue, "rows": list[dict],
+#            "started": asyncio.Event, "cancelled": bool, "finished_at": float|None, ...}
+# Workers pull from _pending_batch_queue (max 2 concurrent); everyone can submit (up to cap).
+# ---------------------------------------------------------------------------
 _job_store: dict[str, dict[str, Any]] = {}
-# Max events to keep per job so late-joining clients get something
+# Max events buffered per job so late-joining clients get something
 _JOB_QUEUE_MAX = 500
+# Jobs are kept for this many seconds after finishing, then evicted
+_JOB_TTL_SECONDS = 300  # 5 minutes
+
+# Concurrency limiters — prevent simultaneous heavy operations from exhausting RAM
+# PDF generation: at most 3 concurrent (WeasyPrint is ~40-80 MB each)
+_PDF_SEMAPHORE = asyncio.Semaphore(3)
+# Batch generation: 2 workers process queue; no 503 for "busy", only when store is full
+_BATCH_SEMAPHORE = asyncio.Semaphore(2)
+# Upload/parse: at most 3 concurrent pandas loads
+_UPLOAD_SEMAPHORE = asyncio.Semaphore(3)
+
+# Pending batch jobs: (job_id,) put when user submits; 2 workers pull and run
+_pending_batch_queue: asyncio.Queue[str] = asyncio.Queue()
+_batch_worker_tasks: list[asyncio.Task[Any]] = []
+_worker_shutdown = asyncio.Event()
+
+# Max jobs in store (queued + running + recently done). Prevents unbounded memory.
+_JOB_STORE_MAX_SIZE = 50
+
+# Max upload file size: 5 MB
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+# Max rows per upload preview and per batch to avoid OOM
+_MAX_ROWS_PREVIEW = 500
+_MAX_ROWS_PER_BATCH = 150
+
+
+def _parse_date_range(from_date: str | None, to_date: str | None) -> tuple[dt | None, dt | None]:
+    """Parse from_date and to_date (YYYY-MM-DD). Return (start_utc, end_utc_exclusive) for MongoDB.
+    Inclusive of both days: start = from_date 00:00:00 UTC, end = to_date+1 00:00:00 UTC (use $lt).
+    If from_date > to_date, swap so the range always makes sense.
+    """
+    def parse(s: str) -> dt | None:
+        s = s.strip()
+        if not s:
+            return None
+        try:
+            return dt.fromisoformat(s + "T00:00:00+00:00")
+        except ValueError:
+            return None
+
+    start_d = parse(from_date) if from_date else None
+    end_d = parse(to_date) if to_date else None
+    if start_d is not None and end_d is not None and start_d > end_d:
+        start_d, end_d = end_d, start_d
+    if start_d is None and end_d is None:
+        return (None, None)
+    # Inclusive end of day: use start of next day as exclusive end
+    if end_d is not None:
+        end_exclusive = end_d + timedelta(days=1)
+    else:
+        end_exclusive = None
+    return (start_d, end_exclusive)
+
+
+def _evict_old_jobs() -> None:
+    """Remove finished jobs older than _JOB_TTL_SECONDS from _job_store."""
+    now = time.monotonic()
+    to_delete = [
+        jid for jid, s in list(_job_store.items())
+        if s.get("status") == "done" and s.get("finished_at") is not None
+        and (now - s["finished_at"]) > _JOB_TTL_SECONDS
+    ]
+    for jid in to_delete:
+        _job_store.pop(jid, None)
+
+
+async def _batch_worker() -> None:
+    """One of 2 workers: pull job_id from queue, run batch in executor, then loop."""
+    while not _worker_shutdown.is_set():
+        try:
+            job_id = await asyncio.wait_for(_pending_batch_queue.get(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+        store = _job_store.get(job_id)
+        if not store or store.get("status") != "queued":
+            continue
+        store["status"] = "running"
+        started_ev = store.get("started")
+        if started_ev is not None:
+            started_ev.set()
+        if store.get("cancelled"):
+            try:
+                store["queue"].put_nowait("done")
+            except Exception:
+                pass
+            store["status"] = "done"
+            store["finished_at"] = time.monotonic()
+            continue
+        rows_data = store.get("rows") or []
+        try:
+            rows = [RowPreview(**r) for r in rows_data]
+        except Exception:
+            rows = []
+        # Free memory: drop serialized rows from store once we have the list
+        try:
+            del store["rows"]
+        except KeyError:
+            pass
+        if not rows:
+            try:
+                store["queue"].put_nowait("done")
+            except Exception:
+                pass
+            store["status"] = "done"
+            store["finished_at"] = time.monotonic()
+            continue
+        try:
+            async with _BATCH_SEMAPHORE:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, _run_batch_sync, job_id, rows
+                )
+        except Exception:
+            try:
+                store["queue"].put_nowait("done")
+            except Exception:
+                pass
+        finally:
+            store["status"] = "done"
+            store["finished_at"] = time.monotonic()
+
+
+def start_batch_workers() -> None:
+    """Start 2 background workers that process the batch queue. Call from app lifespan."""
+    _worker_shutdown.clear()
+    for _ in range(2):
+        t = asyncio.create_task(_batch_worker())
+        _batch_worker_tasks.append(t)
+
+
+async def stop_batch_workers() -> None:
+    """Signal workers to stop and cancel their tasks. Call from app lifespan shutdown."""
+    _worker_shutdown.set()
+    for t in _batch_worker_tasks:
+        t.cancel()
+    if _batch_worker_tasks:
+        await asyncio.gather(*_batch_worker_tasks, return_exceptions=True)
+    _batch_worker_tasks.clear()
 
 
 def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
@@ -62,11 +206,27 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
     q: Queue = store["queue"]
     total_rows = len(rows)
     inserted_count = 0
+    # Send a start event so the frontend knows the total before any docs arrive
+    try:
+        q.put_nowait({"type": "start", "total_rows": total_rows})
+    except Exception:
+        pass
     try:
         for row_idx, row in enumerate(rows):
             if store.get("cancelled"):
                 break
             row_label = f"{getattr(row, 'buyer_name', '?')}/{getattr(row, 'product_name', '?')}"
+            # Notify frontend which row is being processed
+            try:
+                q.put_nowait({
+                    "type": "row_start",
+                    "row_index": row_idx,
+                    "total_rows": total_rows,
+                    "buyer_name": getattr(row, "buyer_name", "") or "",
+                    "product_name": getattr(row, "product_name", "") or "",
+                })
+            except Exception:
+                pass
             try:
                 docs_to_insert = generate_documents_for_row(row)
             except Exception as gen_err:
@@ -132,10 +292,12 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
             pass
     finally:
         store["status"] = "done"
+        store["finished_at"] = time.monotonic()
         try:
             q.put_nowait("done")
         except Exception:
             pass
+        _evict_old_jobs()
 
 
 router = APIRouter(prefix="/api", tags=["documents"])
@@ -216,55 +378,118 @@ def _find_doc_by_id(oid: ObjectId) -> tuple[Any, str | None]:
 
 
 @router.post("/upload-preview", response_model=UploadPreviewResponse)
-async def upload_preview(file: UploadFile = File(...)) -> UploadPreviewResponse:
+async def upload_preview(request: Request, file: UploadFile = File(...)) -> UploadPreviewResponse:
     """Upload Excel/CSV and return a clean preview of rows to the frontend."""
-    previews: List[RowPreview] = parse_excel_to_previews(file)
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum allowed size is {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    async with _UPLOAD_SEMAPHORE:
+        try:
+            previews = parse_excel_to_previews(file, max_rows=_MAX_ROWS_PREVIEW)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error reading file: {str(exc)[:200]}",
+            ) from exc
     return UploadPreviewResponse(rows=previews)
 
 
 @router.post("/generate-batch", response_model=GenerateBatchResponse)
 async def generate_batch(payload: GenerateBatchRequest) -> GenerateBatchResponse:
-    """Start batch generation. Returns job_id. Use GET /jobs/{job_id}/stream for SSE progress."""
+    """Queue batch generation. Returns job_id immediately. Use GET /jobs/{job_id}/stream for SSE.
+    Jobs are processed in order (max 2 concurrent). 503 only when queue/store is full."""
     if not payload.rows:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No rows provided")
+    if len(payload.rows) > _MAX_ROWS_PER_BATCH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many rows. Maximum {_MAX_ROWS_PER_BATCH} per batch. Split your file or select fewer rows.",
+        )
+
+    _evict_old_jobs()
+
+    if len(_job_store) >= _JOB_STORE_MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Too many generation jobs in queue. Please try again in a few minutes.",
+        )
+
     job_id = str(uuid.uuid4())
     q: Queue = Queue(maxsize=_JOB_QUEUE_MAX)
-    _job_store[job_id] = {"status": "running", "queue": q, "cancelled": False}
-    asyncio.get_event_loop().run_in_executor(
-        None,
-        _run_batch_sync,
-        job_id,
-        payload.rows,
-    )
+    started_ev = asyncio.Event()
+    _job_store[job_id] = {
+        "status": "queued",
+        "queue": q,
+        "started": started_ev,
+        "rows": [r.model_dump() for r in payload.rows],
+        "cancelled": False,
+        "finished_at": None,
+        "total_rows": len(payload.rows),
+    }
+
+    await _pending_batch_queue.put(job_id)
     return GenerateBatchResponse(job_id=job_id)
 
 
 @router.get("/jobs/{job_id}/stream")
 async def job_stream(job_id: str) -> StreamingResponse:
-    """SSE stream: events 'document' (with doc payload) and 'done'."""
+    """SSE stream: events 'document' (with doc payload) and 'done'.
+    Note: Job state is in-memory per process. With multiple backend instances,
+    use sticky sessions so the same instance that created the job serves the stream.
+    """
     if job_id not in _job_store:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found or expired. If the server restarted or you have multiple instances, start generation again from the Preview page.",
+        )
 
     store = _job_store[job_id]
     q: Queue = store["queue"]
+    started_ev = store.get("started")
 
     async def event_gen() -> Any:
-        if store["status"] == "done":
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-            return
-        while True:
-            try:
-                item = q.get_nowait()
-            except Empty:
-                if store["status"] == "done":
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                    return
-                await asyncio.sleep(0.25)
-                continue
-            if item == "done":
+        try:
+            if store["status"] == "done":
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
-            yield f"data: {json.dumps({'type': 'document', 'doc': item})}\n\n"
+            # If job is still queued, tell client and wait until a worker starts it (or it finishes/dies)
+            if store.get("status") == "queued" and started_ev is not None:
+                yield f"data: {json.dumps({'type': 'queued', 'message': 'Waiting in queue…'})}\n\n"
+                try:
+                    await asyncio.wait_for(started_ev.wait(), timeout=120.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Queue wait timed out'})}\n\n"
+                    return
+                if store.get("status") == "done":
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    return
+            while True:
+                try:
+                    item = q.get_nowait()
+                except Empty:
+                    if store["status"] == "done":
+                        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                        return
+                    await asyncio.sleep(0.25)
+                    continue
+                if item == "done":
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    return
+                # If item already has a 'type' field it's a control event (start, row_start, error)
+                if isinstance(item, dict) and "type" in item:
+                    yield f"data: {json.dumps(item)}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'document', 'doc': item})}\n\n"
+        finally:
+            # Once the client stream ends (done or disconnected), schedule cleanup
+            # after TTL so any reconnecting client can still get 404 gracefully.
+            store["finished_at"] = store.get("finished_at") or time.monotonic()
+            _evict_old_jobs()
 
     return StreamingResponse(
         event_gen(),
@@ -388,20 +613,13 @@ async def list_documents(
     if manual:
         # Manual docs: only from manual_documents collection (separate dashboard)
         query_manual_coll = {k: v for k, v in query.items() if k != "batch_id"}
-    if from_date or to_date:
+    date_start_utc, date_end_exclusive_utc = _parse_date_range(from_date, to_date)
+    if date_start_utc is not None or date_end_exclusive_utc is not None:
         date_filter: dict[str, Any] = {}
-        if from_date:
-            try:
-                start = dt.fromisoformat(from_date.strip() + "T00:00:00+00:00")
-                date_filter["$gte"] = start
-            except ValueError:
-                pass
-        if to_date:
-            try:
-                end = dt.fromisoformat(to_date.strip() + "T23:59:59.999999+00:00")
-                date_filter["$lte"] = end
-            except ValueError:
-                pass
+        if date_start_utc is not None:
+            date_filter["$gte"] = date_start_utc
+        if date_end_exclusive_utc is not None:
+            date_filter["$lt"] = date_end_exclusive_utc
         if date_filter:
             query["created_at"] = date_filter
             if manual:
@@ -511,20 +729,13 @@ async def list_batches(
         match_query["product_type"] = product_type
     if entered_by and entered_by.strip():
         match_query["employee_name"] = entered_by.strip()
-    if from_date or to_date:
+    date_start_utc, date_end_exclusive_utc = _parse_date_range(from_date, to_date)
+    if date_start_utc is not None or date_end_exclusive_utc is not None:
         date_filter: dict[str, Any] = {}
-        if from_date:
-            try:
-                start = dt.fromisoformat(from_date.strip() + "T00:00:00+00:00")
-                date_filter["$gte"] = start
-            except ValueError:
-                pass
-        if to_date:
-            try:
-                end = dt.fromisoformat(to_date.strip() + "T23:59:59.999999+00:00")
-                date_filter["$lte"] = end
-            except ValueError:
-                pass
+        if date_start_utc is not None:
+            date_filter["$gte"] = date_start_utc
+        if date_end_exclusive_utc is not None:
+            date_filter["$lt"] = date_end_exclusive_utc
         if date_filter:
             match_query["created_at"] = date_filter
     if q and q.strip():
@@ -538,7 +749,10 @@ async def list_batches(
     ]
     pipeline_list: List[dict[str, Any]] = [
         {"$match": match_query},
-        {"$sort": {"created_at": -1}},
+        # Sort ascending by _id (insertion order) so the quotation — always inserted first —
+        # is picked by $first. This ensures multi-product batches show the full comma-separated
+        # product list from the quotation rather than a single-product TDS/COA name.
+        {"$sort": {"_id": 1}},
         {"$group": {
             "_id": "$batch_id",
             "buyer_name": {"$first": "$buyer_name"},
@@ -615,6 +829,119 @@ async def delete_batch(batch_id: str) -> dict[str, int]:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database error",
         ) from e
+
+
+@router.get("/documents/batch/{batch_id}/invoices", response_model=ListDocumentsResponse)
+async def list_batch_invoices(batch_id: str) -> ListDocumentsResponse:
+    """Return proforma invoices and invoices that belong to a batch."""
+    if not batch_id or not batch_id.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch id required")
+    try:
+        cursor = documents_collection.find(
+            {"batch_id": batch_id.strip(), "doc_type": {"$in": ["proforma_invoice", "invoice"]}},
+            sort=[("doc_type", 1), ("created_at", 1)],
+        )
+        docs: List[DocumentSummary] = []
+        for d in cursor:
+            docs.append(
+                DocumentSummary(
+                    id=str(d["_id"]),
+                    buyer_name=d.get("buyer_name", ""),
+                    product_name=d.get("product_name", ""),
+                    product_type=d.get("product_type", "chemical"),
+                    doc_type=d.get("doc_type", "invoice"),
+                    created_at=d.get("created_at", dt.now()),
+                    updated_at=d.get("updated_at", dt.now()),
+                    employee_name=d.get("employee_name"),
+                    batch_id=d.get("batch_id"),
+                )
+            )
+        return ListDocumentsResponse(documents=docs, total=len(docs))
+    except PyMongoError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database error: {e}",
+        ) from e
+
+
+@router.post("/documents/batch/{batch_id}/invoices/generate", response_model=ListDocumentsResponse)
+async def generate_batch_invoices(batch_id: str) -> ListDocumentsResponse:
+    """Generate (or re-generate) Proforma Invoice + Invoice for a batch.
+
+    Finds the quotation for the batch, transforms its HTML, persists both
+    documents and returns them.  Existing proforma_invoice / invoice docs for
+    this batch are replaced.
+    """
+    if not batch_id or not batch_id.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch id required")
+
+    batch_id = batch_id.strip()
+
+    # Find the quotation for this batch
+    quotation = documents_collection.find_one(
+        {"batch_id": batch_id, "doc_type": "quotation"},
+        sort=[("created_at", 1)],
+    )
+    if not quotation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No quotation found for this batch. Generate the batch documents first.",
+        )
+
+    source_html: str = quotation.get("html_content") or ""
+    if not source_html.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Quotation HTML is empty; cannot generate invoices.",
+        )
+
+    local_export: str | None = quotation.get("local_export")
+
+    # Build the two HTML variants
+    pi_html = transform_quotation_to_invoice(source_html, "proforma_invoice", local_export)
+    inv_html = transform_quotation_to_invoice(source_html, "invoice", local_export)
+
+    # Delete existing proforma_invoice / invoice docs for this batch
+    documents_collection.delete_many(
+        {"batch_id": batch_id, "doc_type": {"$in": ["proforma_invoice", "invoice"]}}
+    )
+
+    now = now_local()
+    common: dict[str, Any] = {
+        k: quotation.get(k)
+        for k in (
+            "buyer_name", "product_name", "product_type", "employee_name",
+            "letterhead", "quotation_no", "company_name", "local_export",
+            "quantity", "unit", "country", "port", "incoterm",
+            "payment_terms", "remarks",
+        )
+    }
+    common["batch_id"] = batch_id
+    common["created_at"] = now
+    common["updated_at"] = now
+
+    pi_doc = {**common, "doc_type": "proforma_invoice", "html_content": pi_html}
+    inv_doc = {**common, "doc_type": "invoice", "html_content": inv_html}
+
+    result = documents_collection.insert_many([pi_doc, inv_doc])
+    inserted_ids = result.inserted_ids
+
+    created: List[DocumentSummary] = []
+    for oid, d in zip(inserted_ids, [pi_doc, inv_doc]):
+        created.append(
+            DocumentSummary(
+                id=str(oid),
+                buyer_name=d.get("buyer_name", ""),
+                product_name=d.get("product_name", ""),
+                product_type=d.get("product_type", "chemical"),
+                doc_type=d.get("doc_type", "invoice"),
+                created_at=now,
+                updated_at=now,
+                employee_name=d.get("employee_name"),
+                batch_id=batch_id,
+            )
+        )
+    return ListDocumentsResponse(documents=created, total=len(created))
 
 
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -786,7 +1113,10 @@ async def get_pdf(doc_id: str) -> Response:
     letterhead = doc.get("letterhead")
     local_export = doc.get("local_export")
     try:
-        pdf_bytes = html_to_pdf(html, letterhead=letterhead, local_export=local_export)
+        async with _PDF_SEMAPHORE:
+            pdf_bytes = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: html_to_pdf(html, letterhead=letterhead, local_export=local_export)
+            )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"PDF generation failed: {e}")
 
@@ -808,6 +1138,16 @@ async def get_pdf(doc_id: str) -> Response:
             filename = f"COA_{product}.pdf"
         elif doc_type == "msds":
             filename = f"MSDS_{product}.pdf"
+        elif doc_type == "proforma_invoice":
+            qno_raw = doc.get("quotation_no") or _extract_quotation_no_from_html(html) or "PI"
+            qno = _sanitize_filename(qno_raw, 30)
+            company = _sanitize_filename(doc.get("company_name") or "Company", 30)
+            filename = f"PI_{qno}_{company}_{buyer}_{product}.pdf"
+        elif doc_type == "invoice":
+            qno_raw = doc.get("quotation_no") or _extract_quotation_no_from_html(html) or "INV"
+            qno = _sanitize_filename(qno_raw, 30)
+            company = _sanitize_filename(doc.get("company_name") or "Company", 30)
+            filename = f"INV_{qno}_{company}_{buyer}_{product}.pdf"
         else:
             date_str = datetime.now().strftime("%d%m%Y")
             filename = f"{buyer}_{product}_{date_str}.pdf"

@@ -93,7 +93,7 @@ export function DocumentsListPage() {
 
   useEffect(() => setPage(1), [productTypeFilter]);
   useEffect(() => {
-    getEnteredByOptions().then(setEnteredByOptions);
+    getEnteredByOptions().then(setEnteredByOptions).catch(() => setEnteredByOptions([]));
   }, []);
   useEffect(() => {
     fetchBatches(true);

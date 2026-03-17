@@ -8,6 +8,8 @@ import { GeneratePage } from "./routes/GeneratePage";
 import { DocumentsListPage } from "./routes/DocumentsListPage";
 import { EditorPage } from "./routes/EditorPage";
 import { BatchDetailPage } from "./routes/BatchDetailPage";
+import { InvoicesPage } from "./routes/InvoicesPage";
+import { EditRowPage } from "./routes/EditRowPage";
 import { TermsPage } from "./routes/TermsPage";
 import { ManualDocPage } from "./routes/ManualDocPage";
 
@@ -26,6 +28,8 @@ function App() {
               <Route path="/documents/engineering" element={<DocumentsListPage />} />
               <Route path="/documents/chemical" element={<DocumentsListPage />} />
               <Route path="/documents/batch/:batchId" element={<BatchDetailPage />} />
+              <Route path="/documents/batch/:batchId/invoices" element={<InvoicesPage />} />
+              <Route path="/documents/batch/:batchId/edit-row" element={<EditRowPage />} />
               <Route path="/documents/:id" element={<EditorPage />} />
               <Route path="/terms" element={<TermsPage />} />
               <Route path="/manual" element={<ManualDocPage />} />

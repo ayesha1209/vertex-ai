@@ -17,6 +17,8 @@ class DocumentType(str, Enum):
     tds = "tds"  # Technical Data Sheet
     msds = "msds"  # Material Safety Data Sheet
     combined = "combined"  # Legacy: no longer generated; kept for existing DB docs
+    proforma_invoice = "proforma_invoice"  # Derived from quotation
+    invoice = "invoice"  # Derived from quotation
 
 
 class RowInput(BaseModel):
@@ -41,6 +43,10 @@ class RowPreview(BaseModel):
     buyer_name: str
     product_name: str
     # Enquiry columns (optional)
+    # Which documents to generate for this row; from Excel column such as
+    # "Docs" with values like "q,tds,coa,msds". If empty or missing, all
+    # four (quotation, tds, coa, msds) are generated.
+    doc_types: Optional[str] = None
     date: Optional[str] = None
     employee_name: Optional[str] = None
     company_name: Optional[str] = None
