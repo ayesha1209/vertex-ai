@@ -1112,10 +1112,18 @@ async def get_pdf(doc_id: str) -> Response:
         html = "<p>&nbsp;</p>"
     letterhead = doc.get("letterhead")
     local_export = doc.get("local_export")
+    product_type = doc.get("product_type")
     try:
         async with _PDF_SEMAPHORE:
             pdf_bytes = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: html_to_pdf(html, letterhead=letterhead, local_export=local_export)
+                None,
+                lambda: html_to_pdf(
+                    html,
+                    letterhead=letterhead,
+                    local_export=local_export,
+                    product_type=product_type,
+                    manual_document=(which == "manual_documents"),
+                ),
             )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"PDF generation failed: {e}")

@@ -1,8 +1,8 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProductType(str, Enum):
@@ -78,6 +78,18 @@ class RowPreview(BaseModel):
     incoterm: Optional[str] = None
     payment_terms: Optional[str] = None
     remarks: Optional[str] = None
+    # Optional: "chemical" | "engineering" from Excel "Product type" column; keyword fallback if unset
+    product_type: Optional[Literal["chemical", "engineering"]] = None
+    attachment: Optional[str] = None
+    dimensional: Optional[str] = None
+    technical_specification: Optional[str] = None
+
+    @field_validator("product_type", mode="before")
+    @classmethod
+    def _product_type_empty(cls, v: object) -> object:
+        if v == "":
+            return None
+        return v
 
     class Config:
         populate_by_name = True

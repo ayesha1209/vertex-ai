@@ -146,11 +146,21 @@ function ExpandedRowEditor({
               { value: "export", label: "Export ($ USD)" },
             ]}
           />
+          <FieldSelect
+            label="Product type"
+            value={f("product_type")}
+            onChange={(v) => onChange("product_type", v)}
+            options={[
+              { value: "", label: "— Auto (keywords)" },
+              { value: "chemical", label: "Chemical" },
+              { value: "engineering", label: "Engineering" },
+            ]}
+          />
           <FieldInput
             label="Docs to generate"
             value={f("doc_types")}
             onChange={(v) => onChange("doc_types", v)}
-            placeholder="q,tds,coa,msds (empty = all)"
+            placeholder="Empty: all (chem) or q+tds (eng). E.g. q,tds,coa,msds"
           />
         </div>
 
@@ -181,6 +191,14 @@ function ExpandedRowEditor({
           <FieldInput label="Email" value={f("email_id")} onChange={(v) => onChange("email_id", v)} />
           <FieldInput label="Contact no" value={f("contact_no")} onChange={(v) => onChange("contact_no", v)} />
           <FieldInput label="Remarks" value={f("remarks")} onChange={(v) => onChange("remarks", v)} multiline />
+          <FieldInput label="Attachment" value={f("attachment")} onChange={(v) => onChange("attachment", v)} placeholder="e.g. word / pdf" />
+          <FieldInput label="Dimensional" value={f("dimensional")} onChange={(v) => onChange("dimensional", v)} />
+          <FieldInput
+            label="Technical specification hint"
+            value={f("technical_specification")}
+            onChange={(v) => onChange("technical_specification", v)}
+            multiline
+          />
         </div>
       </div>
     </div>

@@ -37,6 +37,11 @@ export interface RowPreview {
   port_of_loading?: string | null;
   port_of_unloading?: string | null;
   unloading_country?: string | null;
+  /** From Excel "Product type" — overrides keyword detection when set */
+  product_type?: "chemical" | "engineering" | null;
+  attachment?: string | null;
+  dimensional?: string | null;
+  technical_specification?: string | null;
 }
 
 export interface UploadPreviewResponse {

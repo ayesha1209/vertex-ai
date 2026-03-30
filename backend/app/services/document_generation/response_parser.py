@@ -52,9 +52,13 @@ _STYLE_P = ""
 _STYLE_P_BOLD = "font-weight:bold;"
 _STYLE_P_COA_CONCLUSION = ""
 _STYLE_P_BOLD_COA_CONCLUSION = "font-weight:bold;"
-_STYLE_UL = ""
-_STYLE_LI = ""
-_STYLE_LI_SUB = ""
+# TDS / technical description: visible bullets and spacing (PDF engines honor list-style on ul/li)
+_STYLE_UL = (
+    "margin:4px 0 8px 0;padding-left:1.35em;list-style-type:disc;"
+    "list-style-position:outside;"
+)
+_STYLE_LI = "margin:3px 0;line-height:1.4;display:list-item;"
+_STYLE_LI_SUB = "margin:2px 0;line-height:1.35;list-style-type:circle;display:list-item;"
 
 PAGE_BREAK = '<div style="page-break-after:always;"></div>'
 
@@ -68,37 +72,123 @@ def _normalize_spacing(text: str) -> str:
     return "\n".join(out)
 
 
+def _inline_bold_md(text: str) -> str:
+    """Turn **bold** into <strong> after escaping non-bold segments."""
+    if "**" not in text:
+        return escape(text)
+    parts = text.split("**")
+    out: list[str] = []
+    for i, segment in enumerate(parts):
+        if not segment:
+            continue
+        if i % 2 == 1:
+            out.append(f"<strong>{escape(segment)}</strong>")
+        else:
+            out.append(escape(segment))
+    return "".join(out)
+
+
 # Quotation table types
 _Q_TABLE_CUSTOMER = 0
 _Q_TABLE_DELIVERY = 1
 _Q_TABLE_ITEMS = 2
 _Q_TABLE_TOTALS = 3
+_Q_TABLE_WEIGHT_PACKING = 4
 
 
 def _detect_table_type(table_rows: list[str]) -> int:
     """Detect quotation table type based on content."""
     if not table_rows:
         return -1
-    
+
     first_row = table_rows[0].lower()
-    
-    # Items table: starts with "No." header
-    if first_row.startswith("no.") or first_row.startswith("no|"):
+
+    # Weight & packing (engineering): header also says "Part Number" — must run before items
+    if (
+        "net weight" in first_row
+        and "gross weight" in first_row
+        and ("packing" in first_row or "packing dimensions" in first_row)
+    ):
+        return _Q_TABLE_WEIGHT_PACKING
+
+    # Items table: chemical No.|... or engineering Sr.|... / Part Number column
+    if (
+        first_row.startswith("no.")
+        or first_row.startswith("no|")
+        or first_row.startswith("sr.")
+        or first_row.startswith("sr|")
+        or "description of goods" in first_row
+        or "part number" in first_row
+        or "unit price" in first_row
+    ):
         return _Q_TABLE_ITEMS
-    
+
     # Totals table: contains "Total Amount"
     if "total amount" in first_row.lower():
         return _Q_TABLE_TOTALS
-    
+
     # Customer table: contains "Bill To"
     if "bill to" in first_row.lower():
         return _Q_TABLE_CUSTOMER
-    
+
     # Delivery table: contains "Delivery" as first cell
     if first_row.startswith("delivery"):
         return _Q_TABLE_DELIVERY
-    
+
     return -1
+
+
+def _strip_leading_trailing_empty_pipe_segments(cells: list[str]) -> list[str]:
+    """Remove empty columns from leading/trailing pipes (e.g. |A|B| -> not 4 cols)."""
+    while cells and cells[0].strip() == "":
+        cells = cells[1:]
+    while cells and cells[-1].strip() == "":
+        cells = cells[:-1]
+    return [c.strip() for c in cells]
+
+
+def _is_markdown_table_separator_row(cells: list[str]) -> bool:
+    """Skip markdown-style separator rows like | --- | --- |."""
+    if len(cells) == 1 and cells[0].strip() and re.match(r"^[-:\s]+$", cells[0].strip()):
+        return True
+    if len(cells) < 2:
+        return False
+    for c in cells:
+        t = c.strip()
+        if not t:
+            continue
+        if not re.match(r"^[-:\s]+$", t):
+            return False
+    return True
+
+
+def _parse_weight_total_gross_two_column(cells: list[str]) -> tuple[str, str]:
+    """Split Total Gross Weight into label + value for a two-cell summary row."""
+    ext = list(cells) + [""] * max(0, 5 - len(cells))
+    c0 = ext[0].strip()
+    c1 = ext[1].strip()
+    m = re.match(r"(?i)(total\s+gross\s+weight\s*:)\s*(.+)$", c0)
+    if m and m.group(2).strip():
+        return (m.group(1).strip(), m.group(2).strip())
+    if re.search(r"(?i)total\s+gross\s+weight", c0):
+        if c1:
+            return ("Total Gross Weight:", c1)
+        m2 = re.search(r"(?i)total\s+gross\s+weight\s*:\s*(.+)", c0)
+        if m2 and m2.group(1).strip():
+            return ("Total Gross Weight:", m2.group(1).strip())
+    return ("Total Gross Weight:", c1 or "—")
+
+
+def _bullet_text_after_marker(stripped: str) -> str | None:
+    """If line starts with • (or common unicode bullets), return text after marker."""
+    if not stripped:
+        return None
+    s = stripped.lstrip("\ufeff")
+    if not s:
+        return None
+    if s[0] in ("•", "\u2022", "\u25cf", "\u25e6", "\u2043"):
+        return s[1:].strip()
+    return None
 
 
 def _flush_quotation_table(
@@ -123,6 +213,8 @@ def _flush_quotation_table(
         label_cols = set()
     elif table_type == _Q_TABLE_TOTALS:
         label_cols = {0}
+    elif table_type == _Q_TABLE_WEIGHT_PACKING:
+        label_cols = set()
     else:
         label_cols = set()
 
@@ -135,19 +227,53 @@ def _flush_quotation_table(
         table_class = ' class="items-table"'
     elif table_type == _Q_TABLE_TOTALS:
         table_class = ' class="totals-table"'
+    elif table_type == _Q_TABLE_WEIGHT_PACKING:
+        table_class = ' class="weight-packing-table"'
     else:
         table_class = ''
     html_lines.append(f'<table{table_class} style="{_Q_TABLE}">')
-    
-    # Add colgroup for items table to control column widths
+
+    items_ncols = 5
+    if table_type == _Q_TABLE_ITEMS and table_rows:
+        items_ncols = max(5, len(table_rows[0].split("|")))
+
+    # Add colgroup for items table to control column widths (5 columns = chemical style; 6 = Sr/Desc/Part/Qty/Price/Amount)
     if table_type == _Q_TABLE_ITEMS:
-        html_lines.append('<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/><col style="width:20%"/><col style="width:20%"/></colgroup>')
+        if items_ncols >= 6:
+            html_lines.append(
+                '<colgroup><col style="width:5%"/><col style="width:32%"/><col style="width:13%"/>'
+                '<col style="width:10%"/><col style="width:15%"/><col style="width:15%"/></colgroup>'
+            )
+        else:
+            html_lines.append(
+                '<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/>'
+                '<col style="width:20%"/><col style="width:20%"/></colgroup>'
+            )
+    elif table_type == _Q_TABLE_WEIGHT_PACKING:
+        html_lines.append(
+            '<colgroup><col style="width:18%"/><col style="width:11%"/><col style="width:11%"/>'
+            '<col style="width:28%"/><col style="width:32%"/></colgroup>'
+        )
+
+    num_start_items = 3 if items_ncols >= 6 else 2
 
     for row_idx, row in enumerate(table_rows):
-        # Split by pipe and keep all cells (including empty ones)
+        # Split by pipe; drop leading/trailing empty columns (fixes |Col|Col| ghost columns)
         raw_cells = row.split("|")
         cells = [c.strip() for c in raw_cells]
-        
+        cells = _strip_leading_trailing_empty_pipe_segments(cells)
+        if _is_markdown_table_separator_row(cells):
+            continue
+
+        if table_type == _Q_TABLE_ITEMS:
+            while len(cells) < items_ncols:
+                cells.append("")
+            cells = cells[:items_ncols]
+        elif table_type == _Q_TABLE_WEIGHT_PACKING:
+            while len(cells) < 5:
+                cells.append("")
+            cells = cells[:5]
+
         # For 4-column tables, ensure we have exactly 4 cells
         if table_type in (_Q_TABLE_CUSTOMER, _Q_TABLE_DELIVERY):
             while len(cells) < 4:
@@ -160,61 +286,96 @@ def _flush_quotation_table(
         if not any(cells):
             continue
 
-        # Items table: first row is header
-        is_header = table_type == _Q_TABLE_ITEMS and row_idx == 0
-        
+        is_header = (table_type == _Q_TABLE_ITEMS and row_idx == 0) or (
+            table_type == _Q_TABLE_WEIGHT_PACKING and row_idx == 0
+        )
+        row_joined = " ".join(cells).lower()
+        is_weight_total_row = (
+            table_type == _Q_TABLE_WEIGHT_PACKING
+            and row_idx > 0
+            and "total gross weight" in row_joined
+        )
+
+        # Total Gross Weight: one row with exactly two cells (colspan 3 + 2), not five narrow columns
+        if is_weight_total_row:
+            lbl, val = _parse_weight_total_gross_two_column(cells)
+            lbl_html = _inline_bold_md(lbl)
+            val_html = _inline_bold_md(val)
+            td_base = f"border:{_B};vertical-align:middle;font-weight:bold;background-color:#ffffff;"
+            html_lines.append("<tr>")
+            html_lines.append(
+                f'<td colspan="3" style="{td_base}text-align:left;">'
+                f"<strong><b>{lbl_html}</b></strong></td>"
+                f'<td colspan="2" style="{td_base}text-align:right;">'
+                f"<strong><b>{val_html}</b></strong></td>"
+            )
+            html_lines.append("</tr>")
+            continue
+
         html_lines.append("<tr>")
         for col_idx, c in enumerate(cells):
             # Handle description - force line breaks before Make: and HSN:
             # Apply to column 1 (Description) of items table
             if table_type == _Q_TABLE_ITEMS and col_idx == 1 and row_idx > 0:
-                import re
                 # Clean up: remove // separators and extra spaces
-                text = re.sub(r'\s*//\s*', ' ', c)
-                text = re.sub(r'\s+', ' ', text).strip()
-                
+                text = re.sub(r"\s*//\s*", " ", c)
+                text = re.sub(r"\s+", " ", text).strip()
+
                 # Split into parts: Product Name, Make:..., HSN:...
-                make_match = re.search(r'Make\s*:', text, re.IGNORECASE)
-                hsn_match = re.search(r'HSN\s*:', text, re.IGNORECASE)
-                
+                make_match = re.search(r"Make\s*:", text, re.IGNORECASE)
+                hsn_match = re.search(r"HSN\s*:", text, re.IGNORECASE)
+
                 parts = []
                 if make_match:
-                    product_name = text[:make_match.start()].strip()
+                    product_name = text[: make_match.start()].strip()
                     if product_name:
-                        parts.append(escape(product_name))
-                    
+                        parts.append(_inline_bold_md(product_name))
+
                     if hsn_match and hsn_match.start() > make_match.start():
-                        make_part = text[make_match.start():hsn_match.start()].strip()
-                        hsn_part = text[hsn_match.start():].strip()
-                        parts.append(escape(make_part))
-                        parts.append(escape(hsn_part))
+                        make_part = text[make_match.start() : hsn_match.start()].strip()
+                        hsn_part = text[hsn_match.start() :].strip()
+                        parts.append(_inline_bold_md(make_part))
+                        parts.append(_inline_bold_md(hsn_part))
                     else:
-                        make_part = text[make_match.start():].strip()
-                        parts.append(escape(make_part))
+                        make_part = text[make_match.start() :].strip()
+                        parts.append(_inline_bold_md(make_part))
                 else:
-                    parts.append(escape(text))
-                
+                    parts.append(_inline_bold_md(text))
+
                 cell_content = "<br/>".join(parts) if parts else "&nbsp;"
             else:
-                cell_content = escape(c) if c else "&nbsp;"
+                cell_content = _inline_bold_md(c) if c else "&nbsp;"
             
             # All cells use <td> to prevent TipTap from converting to <th>
             # Use inline styles for header appearance
             if is_header:
-                # Items table header: gray background, bold, with column widths
-                col_widths = ["6%", "40%", "14%", "20%", "20%"]
-                width_style = f"width:{col_widths[col_idx]};" if col_idx < len(col_widths) else ""
-                nowrap = "white-space:nowrap;" if col_idx == 0 else ""
-                style = f"border:{_B};{width_style}{nowrap}text-align:left;font-weight:bold;vertical-align:top;background-color:#BBBBBB;"
-                if col_idx >= 2:  # Right-align numeric headers
-                    style = style.replace("text-align:left;", "text-align:right;")
-                html_lines.append(f'<td bgcolor="#BBBBBB" style="{style}"><b>{cell_content}</b></td>')
+                if table_type == _Q_TABLE_WEIGHT_PACKING:
+                    col_widths = ["18%", "11%", "11%", "28%", "32%"]
+                    width_style = f"width:{col_widths[col_idx]};" if col_idx < len(col_widths) else ""
+                    nowrap = "white-space:nowrap;" if col_idx == 0 else ""
+                    style = f"border:{_B};{width_style}{nowrap}text-align:left;font-weight:bold;vertical-align:top;background-color:#BBBBBB;"
+                    if col_idx in (1, 2):
+                        style = style.replace("text-align:left;", "text-align:right;")
+                    html_lines.append(f'<td bgcolor="#BBBBBB" style="{style}"><b>{cell_content}</b></td>')
+                else:
+                    # Items table header: gray background, bold, with column widths
+                    col_widths = (
+                        ["5%", "32%", "13%", "10%", "15%", "15%"]
+                        if items_ncols >= 6
+                        else ["6%", "40%", "14%", "20%", "20%"]
+                    )
+                    width_style = f"width:{col_widths[col_idx]};" if col_idx < len(col_widths) else ""
+                    nowrap = "white-space:nowrap;" if col_idx == 0 else ""
+                    style = f"border:{_B};{width_style}{nowrap}text-align:left;font-weight:bold;vertical-align:top;background-color:#BBBBBB;"
+                    if col_idx >= num_start_items:  # Right-align numeric headers
+                        style = style.replace("text-align:left;", "text-align:right;")
+                    html_lines.append(f'<td bgcolor="#BBBBBB" style="{style}"><b>{cell_content}</b></td>')
             else:
                 # Use bold style for Total Amount row (first row of totals table)
                 is_total_row = table_type == _Q_TABLE_TOTALS and row_idx == 0
                 # Check if this is the "Total Amount" label cell
                 is_total_amount_label = table_type == _Q_TABLE_TOTALS and "Total Amount" in str(c)
-                
+
                 if is_total_row or is_total_amount_label:
                     style = f"border:{_B};text-align:left;vertical-align:top;font-weight:bold;background-color:#ffffff;"
                     cell_content = f"<strong><b>{cell_content}</b></strong>"
@@ -224,8 +385,13 @@ def _flush_quotation_table(
                     style = base_style + "background-color:#ffffff;"
                 if table_type == _Q_TABLE_ITEMS and col_idx == 0:
                     style += "white-space:nowrap;"
+                if table_type == _Q_TABLE_WEIGHT_PACKING and col_idx == 0:
+                    style += "white-space:nowrap;"
                 # Right-align numeric columns in items table
-                if table_type == _Q_TABLE_ITEMS and col_idx >= 2:
+                if table_type == _Q_TABLE_ITEMS and col_idx >= num_start_items:
+                    style += "text-align:right;"
+                # Net / gross weight columns
+                if table_type == _Q_TABLE_WEIGHT_PACKING and col_idx in (1, 2):
                     style += "text-align:right;"
                 # Right-align value column in totals
                 if table_type == _Q_TABLE_TOTALS and col_idx == 1:
@@ -250,28 +416,41 @@ def _flush_table(
         _flush_quotation_table(table_rows, html_lines, table_index)
         return
 
-    # Non-quotation tables (TDS/COA/MSDS)
-    col_counts = [len([c for c in row.split("|") if c.strip()]) for row in table_rows]
+    # Non-quotation tables (TDS/COA/MSDS engineering technical specs)
+    processed_rows: list[list[str]] = []
+    for row in table_rows:
+        raw = [c.strip() for c in row.split("|")]
+        cells = _strip_leading_trailing_empty_pipe_segments(raw)
+        if not cells:
+            continue
+        if _is_markdown_table_separator_row(cells):
+            continue
+        processed_rows.append(cells)
+
+    if not processed_rows:
+        return
+
+    col_counts = [len(r) for r in processed_rows]
     two_col_kv = len(col_counts) > 0 and all(n == 2 for n in col_counts)
     
     html_lines.append(f'<table style="{_STYLE_TABLE}">')
-    for row_idx, row in enumerate(table_rows):
-        cells = [c.strip() for c in row.split("|")]
-        cells = [c for c in cells if c is not None]
-        if not cells:
-            continue
+    if two_col_kv:
+        html_lines.append(
+            '<colgroup><col style="width:38%"/><col style="width:62%"/></colgroup>'
+        )
+    for row_idx, cells in enumerate(processed_rows):
         is_header_row = row_idx == 0
         tag = "th" if is_header_row else "td"
         parts = []
         for col_idx, c in enumerate(cells):
-            c = escape(c)
+            c_html = _inline_bold_md(c)
             if is_header_row:
                 style = _STYLE_TH
             elif two_col_kv and col_idx == 0:
                 style = _STYLE_TD_LABEL
             else:
                 style = _STYLE_TD
-            parts.append(f'<{tag} style="{style}">{c}</{tag}>')
+            parts.append(f'<{tag} style="{style}">{c_html}</{tag}>')
         html_lines.append("<tr>" + "".join(parts) + "</tr>")
     html_lines.append("</table>")
 
@@ -345,12 +524,18 @@ def _render_terms_block(
     return i
 
 
-def text_to_html(text: str, compact: bool = False, multi_product: bool = False) -> str:
+def text_to_html(
+    text: str,
+    compact: bool = False,
+    multi_product: bool = False,
+    tight_spacing: bool = False,
+) -> str:
     """
     Convert AI text to clean HTML. Inline styles only for best PDF/DOCX output.
     Preserves: tables (| and ---TABLE---), horizontal rules (---), bullets, headings.
     If compact=True (for quotation), uses smaller fonts and tight padding for one-page layout.
     If multi_product=True (quotation with multiple products), terms are full width and signatory after 15.
+    If tight_spacing=True (e.g. engineering technical description), blank lines are skipped (no empty paragraphs).
     """
     text = _normalize_spacing(text)
     lines = text.splitlines()
@@ -407,7 +592,7 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
                         return False
                     u = line.upper()
                     return (
-                        "TECHNICAL DATA" in u or "TECHNICAL DATA SHEET" in u
+                        "TECHNICAL DATA" in u or "TECHNICAL DATA SHEET" in u or "TECHNICAL DESCRIPTION" in u
                         or "CERTIFICATE OF ANALYSIS" in u or " COA " in u or u.strip().startswith("# COA")
                         or "MATERIAL SAFETY" in u or "MSDS" in u
                         or ("SECTION" in u and "===" in line)
@@ -548,16 +733,25 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
             if not in_ul:
                 html_lines.append(f'<ul style="{_STYLE_UL}">')
                 in_ul = True
-            html_lines.append(f'<li style="{_STYLE_LI_SUB}">{escape(content)}</li>')
+            html_lines.append(f'<li style="{_STYLE_LI_SUB}">{_inline_bold_md(content)}</li>')
             i += 1
             continue
-        # Bullets
-        if stripped.startswith("•"):
-            content = stripped.lstrip("•").strip()
+        # Bullets (• and common unicode bullets; tab/space after marker OK)
+        bullet_rest = _bullet_text_after_marker(stripped)
+        if bullet_rest is not None:
             if not in_ul:
                 html_lines.append(f'<ul style="{_STYLE_UL}">')
                 in_ul = True
-            html_lines.append(f'<li style="{_STYLE_LI}">{escape(content)}</li>')
+            html_lines.append(f'<li style="{_STYLE_LI}">{_inline_bold_md(bullet_rest)}</li>')
+            i += 1
+            continue
+        # Markdown-style hyphen bullets (- item) — not horizontal rule ---
+        if stripped.startswith("- ") and len(stripped) > 2:
+            content = stripped[2:].strip()
+            if not in_ul:
+                html_lines.append(f'<ul style="{_STYLE_UL}">')
+                in_ul = True
+            html_lines.append(f'<li style="{_STYLE_LI}">{_inline_bold_md(content)}</li>')
             i += 1
             continue
         else:
@@ -565,7 +759,8 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
 
         if not stripped:
             close_coa_conclusion()
-            html_lines.append("<p><br/></p>")
+            if not tight_spacing:
+                html_lines.append("<p><br/></p>")
             i += 1
             continue
 
@@ -593,7 +788,7 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
             has_content = True
         elif stripped.endswith(":") and len(stripped) < 80:
             bold_style = _STYLE_P_BOLD_COA_CONCLUSION if in_coa_conclusion else _STYLE_P_BOLD
-            html_lines.append(f'<p style="{bold_style}">{escape(stripped)}</p>')
+            html_lines.append(f'<p style="{bold_style}">{_inline_bold_md(stripped)}</p>')
             has_content = True
         elif (
             "Certificate of Analysis" in stripped
@@ -615,7 +810,7 @@ def text_to_html(text: str, compact: bool = False, multi_product: bool = False) 
             has_content = True
         else:
             p_style = _STYLE_P_COA_CONCLUSION if in_coa_conclusion else _STYLE_P
-            html_lines.append(f'<p style="{p_style}">{escape(stripped)}</p>')
+            html_lines.append(f'<p style="{p_style}">{_inline_bold_md(stripped)}</p>')
             has_content = True
         i += 1
 
@@ -641,8 +836,10 @@ def split_four_sections(full_text: str) -> tuple[str, str, str, str]:
     q_match = re.search(r"#\s*QUOTATION\b", full_text, re.IGNORECASE)
     q_start = q_match.start() if q_match else 0
     
-    # Find all TDS sections (may have product name suffix like "# TECHNICAL DATA SHEET (TDS) - ProductName")
-    tds_pattern = r"#\s*TECHNICAL DATA SHEET\s*\(TDS\)(?:\s*-\s*[^\n]*)?"
+    # TDS sections: chemical marker OR engineering "TECHNICAL DESCRIPTION"
+    tds_pattern = (
+        r"#\s*(?:TECHNICAL DATA SHEET\s*\(TDS\)|TECHNICAL DESCRIPTION)(?:\s*-\s*[^\n]*)?"
+    )
     tds_matches = list(re.finditer(tds_pattern, full_text, re.IGNORECASE))
     
     # Find all COA sections

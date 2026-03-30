@@ -211,6 +211,10 @@ export function EditRowPage() {
         unloading_country: null,
         doc_types: null,
         department: null,
+        product_type: (d as { product_type?: "chemical" | "engineering" }).product_type ?? null,
+        attachment: null,
+        dimensional: null,
+        technical_specification: null,
       });
     } catch (e: unknown) {
       setLoadError(e instanceof Error ? e.message : "Failed to load batch data.");
@@ -371,6 +375,13 @@ export function EditRowPage() {
                   <option value="">— Not set</option>
                   <option value="local">Local (₹ INR)</option>
                   <option value="export">Export ($ USD)</option>
+                </select>
+              </Field>
+              <Field label="Product type" hint="Overrides keyword detection">
+                <select className={selectCls} value={f("product_type")} onChange={(e) => set("product_type", e.target.value)}>
+                  <option value="">— Auto (keywords)</option>
+                  <option value="chemical">Chemical</option>
+                  <option value="engineering">Engineering</option>
                 </select>
               </Field>
               <Field label="Docs to generate" hint="e.g. q,tds — leave empty for all">

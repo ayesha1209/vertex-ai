@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 _ASSETS_DIR = Path(__file__).parent.parent.parent / "assets" / "logos"
 _HEADER_LOGO = _ASSETS_DIR / "header_logo.png"
 _FOOTER_LOGO = _ASSETS_DIR / "footer_logo.png"
+# Engineering header: try newest asset first, then legacy name (same folder as chemical logos).
+_ENGINEERING_LOGO_CANDIDATES: tuple[str, ...] = (
+    "vertexengg-removebg-preview.png",
+    "header_logo_engineering.png",
+)
 _ICON_LOCATION = _ASSETS_DIR / "location.png"
 _ICON_PHONE = _ASSETS_DIR / "phone.png"
 _ICON_EMAIL = _ASSETS_DIR / "mail.png"
@@ -40,6 +45,28 @@ def _load_sig_tag() -> str:
     return ""
 
 _SIG_TAG = _load_sig_tag()
+
+
+def _is_engineering_pdf(product_type: Optional[str]) -> bool:
+    return (product_type or "").strip().lower() == "engineering"
+
+
+def _engineering_header_logo_path() -> Optional[Path]:
+    """First existing engineering logo file under assets/logos."""
+    for name in _ENGINEERING_LOGO_CANDIDATES:
+        p = _ASSETS_DIR / name
+        if p.is_file():
+            return p
+    return None
+
+
+def _header_logo_path(product_type: Optional[str]) -> Path:
+    """Chemical default logo; engineering uses dedicated asset when present."""
+    if _is_engineering_pdf(product_type):
+        eng = _engineering_header_logo_path()
+        if eng is not None:
+            return eng
+    return _HEADER_LOGO
 
 
 def _get_logo_base64(path: Path) -> str:
@@ -95,6 +122,20 @@ def _restore_quotation_format(html: str) -> str:
         if "<colgroup" not in html[after_tag : after_tag + 120]:
             colgroup = '<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/><col style="width:20%"/><col style="width:20%"/></colgroup>'
             html = html[:after_tag] + colgroup + html[after_tag:]
+    # 1c) weight-packing-table: NetWeight & GrossWeight header
+    for m in re.finditer(r"<table(\s[^>]*)?>", html):
+        tag = m.group(0)
+        if "class=" in tag:
+            continue
+        start = m.end()
+        end = min(start + 1200, len(html))
+        chunk = html[start:end]
+        if "Net Weight" in chunk and "Gross Weight" in chunk and "Packing" in chunk:
+            new_tag = "<table class=\"weight-packing-table\" " + (m.group(1) or "").lstrip()
+            if not new_tag.endswith(">"):
+                new_tag = new_tag.rstrip() + ">"
+            html = html[: m.start()] + new_tag + html[m.end() :]
+            break
     # 2) Restore totals-table: first table containing "Total Amount" without that class
     pos = html.find("Total Amount")
     if pos != -1:
@@ -288,10 +329,22 @@ def _get_header_footer_css() -> str:
     """
 
 
-def _header_footer_vars(letterhead: Optional[str] = None) -> tuple[str, str, str, str, str]:
+def _header_footer_vars(
+    letterhead: Optional[str] = None,
+    product_type: Optional[str] = None,
+) -> tuple[str, str, str, str, str]:
     """Return (header_phone, header_web, footer_address, footer_mobile, footer_web) for given letterhead. Dubai vs India."""
     letterhead = (letterhead or "").strip().lower()
+    eng = _is_engineering_pdf(product_type)
     if letterhead == "dubai":
+        if eng:
+            return (
+                "Mobile no : 971 525261658",
+                "vertexengineerings.ae",
+                "DSO-IFZA, IFZA Properties, Dubai Silicon Oasis",
+                "Mobile no : 971 525261658",
+                "Web: vertexengineerings.ae",
+            )
         return (
             "Mobile no : 971 525261658",
             "vertexchemical.in",
@@ -300,6 +353,14 @@ def _header_footer_vars(letterhead: Optional[str] = None) -> tuple[str, str, str
             "Web: vertexchemical.in",
         )
     # India (default)
+    if eng:
+        return (
+            "+91 8866335159",
+            "www.vertexengineerings.in",
+            "206/5, Signet Hub, Akshar Chowk, Vadodara-390020",
+            "+91 99095 51658",
+            "Web: www.vertexengineerings.in",
+        )
     return (
         "+91 8866335159",
         "vertexchemical.in",
@@ -445,11 +506,13 @@ def _force_terms_sig_borders_off(html: str) -> str:
     return html[:tbl_start] + chunk + html[end_table:]
 
 
-def _inject_signature_image(html: str) -> str:
-    """Inject the authorized-signatory stamp image right before the AUTHORIZED SIGNATORY line.
-    Runs at PDF export time — immune to TipTap stripping <img> tags on save.
+def _inject_signature_image(html: str, *, manual_document: bool = False) -> str:
+    """Inject the authorized-signatory stamp image at PDF export time.
+
+    - Generated docs: place the image just before ``AUTHORIZED SIGNATORY`` when that text exists.
+    - Manual docs: if that phrase is missing, append the signature block at the **end** of the
+      document so PDFs still show the stamp (TipTap may not include signatory wording).
     """
-    # Load dynamically in case module-level load failed (e.g. file added after startup)
     sig_tag = _SIG_TAG
     if not sig_tag:
         sig_tag = _load_sig_tag()
@@ -458,26 +521,35 @@ def _inject_signature_image(html: str) -> str:
 
     upper = html.upper()
     auth_pos = upper.find("AUTHORIZED SIGNATORY")
-    if auth_pos == -1:
-        return html
 
-    # Skip if an <img> is already present within 500 chars before "AUTHORIZED SIGNATORY"
-    nearby = html[max(0, auth_pos - 500): auth_pos]
-    if "<img" in nearby.lower():
-        return html
+    if auth_pos != -1:
+        nearby = html[max(0, auth_pos - 500) : auth_pos]
+        if "<img" in nearby.lower():
+            return html
+        sig_block = (
+            f'<div style="text-align:right; display:block; width:100%;">'
+            f"{sig_tag}"
+            f"</div>"
+        )
+        p_pos = html.rfind("<p", 0, auth_pos)
+        if p_pos == -1:
+            return html[:auth_pos] + sig_block + html[auth_pos:]
+        return html[:p_pos] + sig_block + html[p_pos:]
 
-    sig_block = (
-        f'<div style="text-align:right; display:block; width:100%;">'
-        f'{sig_tag}'
-        f'</div>'
-    )
+    if manual_document:
+        tail = html[-1200:] if len(html) > 1200 else html
+        if "height:65px" in tail and "width:auto" in tail:
+            return html
+        sig_footer = (
+            '<div style="text-align:right; display:block; width:100%; margin-top:28px; '
+            'padding-top:14px; border-top:1px solid #ccc;">'
+            f"{sig_tag}"
+            '<p style="font-size:9pt; color:#333; margin:8px 0 0 0;">Authorized Signatory</p>'
+            "</div>"
+        )
+        return html + sig_footer
 
-    # Walk back to the nearest opening <p tag before "AUTHORIZED SIGNATORY"
-    p_pos = html.rfind("<p", 0, auth_pos)
-    if p_pos == -1:
-        return html[:auth_pos] + sig_block + html[auth_pos:]
-
-    return html[:p_pos] + sig_block + html[p_pos:]
+    return html
 
 
 def _prepare_body_for_export(html: str) -> str:
@@ -650,21 +722,43 @@ def _normalize_currency_for_export(html: str, local_export: Optional[str] = None
     return out
 
 
+def _header_branding(product_type: Optional[str]) -> tuple[str, str]:
+    """Company line and tagline for PDF header."""
+    if _is_engineering_pdf(product_type):
+        return (
+            "VERTEX ENGINEERING",
+            "INDUSTRIAL ELECTRICAL, INSTRUMENTATION & AUTOMATION SOLUTIONS",
+        )
+    return (
+        "VERTEX CHEMICAL",
+        "YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY",
+    )
+
+
 def _header_footer_tables(
     letterhead: Optional[str],
     header_logo: str,
     footer_logo: str,
+    product_type: Optional[str] = None,
 ) -> tuple[str, str]:
     """Build header and footer table HTML."""
-    h_phone, h_web, _footer_address, _footer_mobile, _footer_web = _header_footer_vars(letterhead)
+    h_phone, h_web, _footer_address, _footer_mobile, _footer_web = _header_footer_vars(
+        letterhead, product_type=product_type
+    )
+    company_line, tagline = _header_branding(product_type)
+    logo_cell = (
+        f'<img src="{header_logo}" width="55" height="50"/>'
+        if header_logo
+        else '<span style="display:inline-block;width:55px;height:50px;"></span>'
+    )
     header_table = f'''<table class="hf-table">
 <tr>
 <td style="width:60px; padding:2px 4px; vertical-align:middle;">
-<img src="{header_logo}" width="55" height="50"/>
+{logo_cell}
 </td>
 <td style="padding:2px 8px; vertical-align:middle; text-align:left; line-height:1.25;">
-<b style="font-size:11pt; color:#1a5276; line-height:1.25;">VERTEX CHEMICAL</b><br/>
-<span style="font-size:5.5pt; color:#666; letter-spacing:0.3pt; line-height:1.25;">YOUR PARTNER FOR QUALITY CHEMICALS, GLOBALLY</span>
+<b style="font-size:11pt; color:#1a5276; line-height:1.25;">{company_line}</b><br/>
+<span style="font-size:5.5pt; color:#666; letter-spacing:0.3pt; line-height:1.25;">{tagline}</span>
 </td>
 <td style="width:34%; padding:2px 8px; vertical-align:middle; text-align:right; word-wrap:break-word; overflow-wrap:break-word; white-space:normal; line-height:1.35;">
 <span style="font-size:7pt; color:#333;"><b>Phone:</b> {h_phone}</span><br/>
@@ -684,12 +778,14 @@ def wrap_html_for_export(
     include_header_footer: bool = False,
     letterhead: Optional[str] = None,
     prepared_body: Optional[str] = None,
+    product_type: Optional[str] = None,
 ) -> str:
     """
     Wrap TipTap/editor HTML in a full document with the export print CSS.
     Single source for both DOCX and PDF. Normalizes page-break divs.
     letterhead: "dubai" | "india" | None for chemical header/footer address and phone.
     prepared_body: if set, use this as body (already normalized + currency applied); skip _prepare_body and rupee replacement.
+    product_type: "engineering" uses engineering logo and Vertex Engineering branding in PDF header when present.
     """
     if prepared_body is not None:
         body_html = prepared_body
@@ -699,13 +795,15 @@ def wrap_html_for_export(
         body_html = _replace_rupee_for_export(body_html)
 
     if include_header_footer:
-        header_logo = _get_logo_base64(_HEADER_LOGO)
+        header_logo = _get_logo_base64(_header_logo_path(product_type))
         footer_logo = _get_logo_base64(_FOOTER_LOGO)
         icon_location = _get_logo_base64(_ICON_LOCATION)
         icon_phone = _get_logo_base64(_ICON_PHONE)
         icon_email = _get_logo_base64(_ICON_EMAIL)
 
-        header_table, footer_table = _header_footer_tables(letterhead, header_logo, footer_logo)
+        header_table, footer_table = _header_footer_tables(
+            letterhead, header_logo, footer_logo, product_type=product_type
+        )
 
         # xhtml2pdf approach: use @page with static frames
         
@@ -789,15 +887,21 @@ def wrap_html_for_export(
 </html>"""
 
 
-def _build_full_html_for_weasyprint(body_html: str, letterhead: Optional[str] = None) -> str:
+def _build_full_html_for_weasyprint(
+    body_html: str,
+    letterhead: Optional[str] = None,
+    product_type: Optional[str] = None,
+) -> str:
     """
     Build full HTML for WeasyPrint with running header/footer so they appear on every page
     in @page margin boxes (no -pdf-frame-content; WeasyPrint uses position: running()).
     Avoids header/footer being rendered as large blocks in the main flow.
     """
-    header_logo = _get_logo_base64(_HEADER_LOGO)
+    header_logo = _get_logo_base64(_header_logo_path(product_type))
     footer_logo = _get_logo_base64(_FOOTER_LOGO)
-    header_table, footer_table = _header_footer_tables(letterhead, header_logo, footer_logo)
+    header_table, footer_table = _header_footer_tables(
+        letterhead, header_logo, footer_logo, product_type=product_type
+    )
     css_without_page = re.sub(r'@page\s*\{[^}]*\}', '', EXPORT_PRINT_CSS)
     # margin-top 90pt: header takes ~55pt, leaves ~35pt gap before content (matches local).
     # margin-bottom 65pt: footer takes ~40pt, leaves ~25pt gap after content.
@@ -991,26 +1095,60 @@ def html_to_docx(html: str, title: str = "Document") -> bytes:
     return docx_buffer.getvalue()
 
 
-def html_to_pdf(html: str, letterhead: Optional[str] = None, local_export: Optional[str] = None) -> bytes:
+def _sanitize_html_for_pdf(html: str) -> str:
+    """Remove attributes that break WeasyPrint/xhtml2pdf (e.g. int(None) on empty width/colspan)."""
+    if not html:
+        return html
+    out = html
+    out = re.sub(r'\s+(width|height|colspan|rowspan)\s*=\s*""', "", out, flags=re.IGNORECASE)
+    out = re.sub(r"\s+(width|height|colspan|rowspan)\s*=\s*''", "", out, flags=re.IGNORECASE)
+    # Empty image src causes ReportLab/xhtml2pdf errors
+    out = re.sub(
+        r"<img([^>]*)\ssrc\s*=\s*(?:\"\"|'')\s*",
+        r"<img\1 ",
+        out,
+        flags=re.IGNORECASE,
+    )
+    return out
+
+
+def html_to_pdf(
+    html: str,
+    letterhead: Optional[str] = None,
+    local_export: Optional[str] = None,
+    product_type: Optional[str] = None,
+    manual_document: bool = False,
+) -> bytes:
     """
     Generate PDF from TipTap HTML. Prefer WeasyPrint; fallback to xhtml2pdf.
     A4, fixed margins, stable tables, page-break control.
     Includes header and footer on every page.
     letterhead: "dubai" | "india" | None.
     local_export: "local" | "export" for currency normalization (Rs vs $).
+    product_type: "engineering" selects engineering letterhead (logo, name, web URLs).
+    manual_document: when True, append signature image at end of body if no AUTHORIZED SIGNATORY block.
     """
+    html = _sanitize_html_for_pdf(html)
     body_html = _prepare_body_for_export(html)
     body_html = _normalize_currency_for_export(body_html, local_export)
     # Inject signature AFTER currency normalization so the base64 image data
     # is never processed by the Rs→$ regex (which would corrupt the base64).
-    body_html = _inject_signature_image(body_html)
+    body_html = _inject_signature_image(body_html, manual_document=manual_document)
 
-    full_html_weasy = _build_full_html_for_weasyprint(body_html, letterhead)
+    full_html_weasy = _sanitize_html_for_pdf(
+        _build_full_html_for_weasyprint(body_html, letterhead, product_type=product_type)
+    )
     pdf_bytes: Optional[bytes] = _pdf_weasyprint(full_html_weasy)
     if pdf_bytes is not None:
         return pdf_bytes
-    full_html = wrap_html_for_export(
-        html, include_header_footer=True, letterhead=letterhead, prepared_body=body_html
+    full_html = _sanitize_html_for_pdf(
+        wrap_html_for_export(
+            html,
+            include_header_footer=True,
+            letterhead=letterhead,
+            prepared_body=body_html,
+            product_type=product_type,
+        )
     )
     return _pdf_xhtml2pdf(full_html)
 

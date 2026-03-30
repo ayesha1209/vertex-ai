@@ -7,6 +7,15 @@ from fastapi import HTTPException, UploadFile, status
 
 from app.schemas.document import RowPreview
 
+# Treat as "leave empty for AI" (same as from ai)
+_PLACEHOLDER_EMPTY = frozenset(
+    {
+        "from ai",
+        "take from ai",
+        "enter from vertex",
+    }
+)
+
 
 def _normalize_date(val: Any) -> str | None:
     """Convert Excel date/datetime or date string to YYYY-MM-DD for consistent filtering."""
@@ -15,7 +24,7 @@ def _normalize_date(val: Any) -> str | None:
     if hasattr(val, "strftime"):
         return val.strftime("%Y-%m-%d")
     s = str(val).strip()
-    if not s or s.lower() == "from ai":
+    if not s or s.lower() == "from ai" or s.lower() in _PLACEHOLDER_EMPTY:
         return None
     try:
         parsed = pd.to_datetime(s)
@@ -34,7 +43,7 @@ def _col(df: pd.DataFrame, *candidates: str) -> str | None:
 
 
 def _val(row: Any, col: str | None, default: str | None = None) -> str | None:
-    """Get string value; if empty or 'from ai' return None so AI generates."""
+    """Get string value; if empty or placeholder return None so AI generates."""
     if col is None:
         return default
     try:
@@ -43,10 +52,23 @@ def _val(row: Any, col: str | None, default: str | None = None) -> str | None:
         return default
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return default
-    s = str(v).strip().lower()
-    if s == "" or s == "from ai":
+    raw = str(v).strip()
+    s = raw.lower()
+    if s == "" or s == "from ai" or s in _PLACEHOLDER_EMPTY:
         return None
-    return str(v).strip()
+    return raw
+
+
+def _normalize_product_type(val: str | None) -> str | None:
+    """Return 'chemical' | 'engineering' or None for RowPreview.product_type."""
+    if val is None:
+        return None
+    s = val.strip().lower()
+    if s in ("engineering", "eng", "e", "industrial engineering"):
+        return "engineering"
+    if s in ("chemical", "chem", "c"):
+        return "chemical"
+    return None
 
 
 # Required: at least one of these for Buyer and Product
@@ -57,6 +79,17 @@ PRODUCT_CANDIDATES = ["Product name", "Product Name", "product name"]
 ENQUIRY_MAP = [
     # Which docs to generate: e.g. "q,tds,coa,msds" (empty → all)
     ("doc_types", ["Docs", "docs", "Doc types", "Doc Types", "Documents", "Docs to generate"]),
+    (
+        "product_type",
+        [
+            "Product type",
+            "product type",
+            "Product Type",
+            "Category",
+            "Product category",
+            "Product Category",
+        ],
+    ),
     ("date", ["date", "Date", "Invoice Date", "invoice date", "Order Date", "order date", "Enquiry Date", "enquiry date"]),
     ("Employee Name", ["Employee Name", "employee name"]),
     ("Company Name", ["Company Name", "company name"]),
@@ -66,17 +99,39 @@ ENQUIRY_MAP = [
     ("Address", ["Address", "address"]),
     ("Letterhead", ["Letterhead", "letterhead", "Letter head"]),
     ("Local/export", ["Local/export", "Local/Export", "local/export"]),
-    ("Transportation", ["Transportation", "transportation"]),
+    (
+        "Transportation",
+        ["Transportation", "transportation", "Teransporation", "teransporation"],
+    ),
     ("type of packingg", ["type of packingg", "type of packing", "Type of packing"]),
-    ("Country name", ["Country name", "Country Name", "Country", "country"]),
+    (
+        "Country name",
+        [
+            "Country name",
+            "Country Name",
+            "Country",
+            "country",
+            "Couuntry name",
+            "couuntry name",
+        ],
+    ),
     ("Email id", ["Email id", "Email Id", "email id"]),
-    ("Contact no", ["Contact no", "Contact No", "contact no"]),
-    ("Manufacturer name", ["Manufacturer name", "Manufacturer Name"]),
+    ("Contact no", ["Contact no", "Contact No", "contact no", "Contect no", "contect no"]),
+    (
+        "Manufacturer name",
+        ["Manufacturer name", "Manufacturer Name", "Manufacure name", "manufacure name"],
+    ),
     ("Product Description", ["Product Description", "product description"]),
     ("hsn code", ["hsn code", "HSN code", "HSN Code"]),
     ("cas no", ["cas no", "CAS no", "CAS No"]),
     ("Qty", ["Qty", "Quantity", "quantity"]),
-    ("Unit", ["Unit", "unit", "Unit (kg/Mt)", "Unit (kg/MT)"]),
+    (
+        "Unit",
+        ["Unit", "unit", "Unit (kg/Mt)", "Unit (kg/MT)", "Unit (Nos)", "unit (nos)"],
+    ),
+    ("attachment", ["attchment", "attachment", "Attachment"]),
+    ("dimensional", ["dimensional", "Dimensional"]),
+    ("technical_specification", ["technical specification", "Technical specification"]),
     ("packing", ["packing", "Packing", "Packing"]),
     ("Price", ["Price", "price"]),
     ("Price FOB/CIF", ["Price FOB/CIF", "price fob/cif"]),
@@ -139,6 +194,8 @@ def parse_excel_to_previews(upload_file: UploadFile, max_rows: int = 500) -> Lis
         if qty is None and "Quantity" in opt_map:
             qty = _val(row, opt_map["Quantity"])
 
+        pt = _normalize_product_type(get("product_type"))
+
         previews.append(
             RowPreview(
                 id=int(idx),
@@ -175,6 +232,10 @@ def parse_excel_to_previews(upload_file: UploadFile, max_rows: int = 500) -> Lis
                 incoterm=get("Incoterm"),
                 payment_terms=get("Payment Terms"),
                 remarks=get("Remarks"),
+                product_type=pt,
+                attachment=get("attachment"),
+                dimensional=get("dimensional"),
+                technical_specification=get("technical_specification"),
             )
         )
 

@@ -26,10 +26,45 @@ _TITLE_STRIP_PATTERNS = [
     re.compile(r"^\s*CERTIFICATE OF ANALYSIS\s*\(COA\)\s*$", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^\s*MATERIAL SAFETY DATA SHEET\s*\(MSDS\)\s*$", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^\s*FULL TECHNICAL DATA SHEET\s*\(TDS\)\s*$", re.IGNORECASE | re.MULTILINE),
+    re.compile(
+        r"^\s*#\s*TECHNICAL DESCRIPTION(?:\s*-\s*[^\n]*)?\s*$", re.IGNORECASE | re.MULTILINE
+    ),
+    re.compile(r"^\s*TECHNICAL DESCRIPTION\s*$", re.IGNORECASE | re.MULTILINE),
 ]
 
 # "Section N:" prefix — replace with "## " so parser renders as bold, slightly larger subheading
 _SECTION_PREFIX = re.compile(r"^Section\s+\d+\s*:\s*", re.IGNORECASE)
+
+
+def _strip_engineering_tds_commercial_lines(text: str) -> str:
+    """Remove commercial/boilerplate lines sometimes echoed into engineering tech text."""
+    out_lines: list[str] = []
+    skip_prefixes = (
+        "supplier:",
+        "manufacturer:",
+        "hsn code:",
+        "hsn:",
+        "quantity:",
+        "qty:",
+        "intended use:",
+        "company/supplier:",
+        "buyer:",
+        "local/export:",
+        "quotation no:",
+        "export to",
+    )
+    for line in text.splitlines():
+        low = line.strip().lower()
+        if not low:
+            out_lines.append(line)
+            continue
+        if any(low.startswith(p) for p in skip_prefixes):
+            continue
+        # Markdown-style horizontal rule / table separator line pasted as plain text
+        if re.match(r"^[-:\s]+$", low) and len(low) >= 4:
+            continue
+        out_lines.append(line)
+    return "\n".join(out_lines)
 
 
 def _clean_doc_text(text: str) -> str:
@@ -145,8 +180,103 @@ _BANK_DETAIL_VALUES = {
 }
 
 
-# For chemical products, Make in item descriptions must always be "Vertex Chemical"
+# Default Make when Manufacturer / Excel field is empty
 _MAKE_VERTEX_CHEMICAL = "Vertex Chemical"
+_MAKE_VERTEX_ENGINEERING = "Vertex Engineering"
+
+
+def _replace_make_in_items_table(html: str, make_display: str) -> str:
+    """Set every Make: line in the items-table to the same escaped text (stops at HTML tags)."""
+    safe = escape((make_display or "").strip())
+    if not safe:
+        return html
+    match = re.search(
+        r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>.*?</table>',
+        html,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        return html
+    block = match.group(0)
+    new_block = re.sub(
+        r"Make\s*:\s*[^<]*",
+        "Make: " + safe,
+        block,
+        flags=re.IGNORECASE,
+    )
+    if new_block == block:
+        return html
+    return html[: match.start()] + new_block + html[match.end() :]
+
+
+def _replace_make_in_items_rows(html: str, makes: list[str], default_make: str) -> str:
+    """One Make per data row (multi-product), in order; pads with last or default."""
+    match = re.search(
+        r'(<table[^>]*class="[^"]*items-table[^"]*"[^>]*>)(.*?)(</table>)',
+        html,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        return html
+    open_tag, inner, close = match.group(1), match.group(2), match.group(3)
+    rows = re.findall(r"<tr[^>]*>.*?</tr>", inner, flags=re.DOTALL | re.IGNORECASE)
+    if len(rows) < 2:
+        return html
+    def_m = (default_make or "").strip()
+    padded: list[str] = []
+    for i in range(len(rows) - 1):
+        if i < len(makes) and makes[i].strip():
+            padded.append(makes[i].strip())
+        elif padded:
+            padded.append(padded[-1])
+        else:
+            padded.append(def_m)
+    new_rows = [rows[0]]
+    for idx, row in enumerate(rows[1:]):
+        make_text = padded[idx] if idx < len(padded) else def_m
+        safe = escape(make_text)
+        new_row = re.sub(
+            r"Make\s*:\s*[^<]*",
+            "Make: " + safe,
+            row,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        new_rows.append(new_row)
+    new_inner = "".join(new_rows)
+    return html[: match.start()] + open_tag + new_inner + close + html[match.end() :]
+
+
+def _apply_make_in_quotation_items(
+    html: str,
+    product_type: ProductType,
+    manufacturer_name: str | None,
+    product_name: str | None,
+) -> str:
+    """
+    Make in items table:
+    - Empty Manufacturer → default Vertex Chemical / Vertex Engineering.
+    - Single Manufacturer string → that Make on every line (commas allowed if one product).
+    - Comma-separated Manufacturer + comma-separated Product → one Make per row, same order.
+    """
+    default = (
+        _MAKE_VERTEX_ENGINEERING
+        if product_type == ProductType.engineering
+        else _MAKE_VERTEX_CHEMICAL
+    )
+    mfr = (manufacturer_name or "").strip()
+    if not mfr:
+        if product_type == ProductType.engineering:
+            return _force_make_vertex_engineering(html)
+        return _force_make_vertex_chemicals(html)
+
+    multi_product = "," in (product_name or "").strip()
+    if multi_product and "," in mfr:
+        parts = [p.strip() for p in mfr.split(",") if p.strip()]
+        if not parts:
+            return _replace_make_in_items_table(html, default)
+        return _replace_make_in_items_rows(html, parts, default)
+    return _replace_make_in_items_table(html, mfr)
 
 
 def _inject_quotation_no(html: str, quotation_no: str | None) -> str:
@@ -187,6 +317,54 @@ def _inject_hsn_in_items(html: str, hsn_code: str | None, product_name: str) -> 
     )
 
 
+def _force_make_vertex_engineering(html: str) -> str:
+    """In the items-table, replace any Make: ... with Make: Vertex Engineering."""
+    match = re.search(
+        r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>.*?</table>',
+        html,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        return html
+    block = match.group(0)
+    new_block = re.sub(
+        r"Make\s*:\s*[^<]*",
+        "Make: " + _MAKE_VERTEX_ENGINEERING,
+        block,
+        flags=re.IGNORECASE,
+    )
+    if new_block == block:
+        return html
+    return html[: match.start()] + new_block + html[match.end() :]
+
+
+def _strip_engineering_quotation_brand_block(html: str) -> str:
+    """Remove redundant standalone Brand heading/lines; Make + HSN belong in the items table only."""
+    # Subsection titles the model sometimes adds after the items/totals tables
+    html = re.sub(
+        r'<h[23][^>]*>\s*Brand\s*:?\s*</h[23]>\s*',
+        "",
+        html,
+        flags=re.IGNORECASE,
+    )
+    # Short paragraph that only repeats brand (e.g. "Brand: Vertex Engineering")
+    html = re.sub(
+        r'<p[^>]*>\s*Brand\s*:\s*[^<]{0,160}</p>\s*',
+        "",
+        html,
+        flags=re.IGNORECASE,
+        count=6,
+    )
+    # Bold label line "Brand:" with nothing useful after
+    html = re.sub(
+        r'<p[^>]*>\s*Brand\s*:\s*</p>\s*',
+        "",
+        html,
+        flags=re.IGNORECASE,
+    )
+    return html
+
+
 def _force_make_vertex_chemicals(html: str) -> str:
     """In the items-table, replace any Make: ... with Make: Vertex Chemical.
     Stops at HTML tags (<br/>, </td>, etc.) so line breaks are preserved."""
@@ -210,10 +388,20 @@ def _force_make_vertex_chemicals(html: str) -> str:
     return html[: match.start()] + new_block + html[match.end() :]
 
 
-def _force_bank_details(html: str) -> str:
+def _bank_detail_values(product_type: ProductType) -> dict[str, str]:
+    """Bank constants; engineering uses Vertex Engineering as account name."""
+    d = dict(_BANK_DETAIL_VALUES)
+    if product_type == ProductType.engineering:
+        d["account name"] = "VERTEX ENGINEERING"
+    return d
+
+
+def _force_bank_details(html: str, product_type: ProductType = ProductType.chemical) -> str:
     """In the delivery-table, overwrite bank-detail value cells with fixed constants.
     The table has 4 columns per row: DeliveryLabel | DeliveryValue | BankLabel | BankValue.
     We identify rows by BankLabel text and replace BankValue with the constant."""
+    bank_vals = _bank_detail_values(product_type)
+
     def _process_delivery_table(m: re.Match) -> str:
         before, body, after = m.group(1), m.group(2), m.group(3)
 
@@ -225,7 +413,7 @@ def _force_bank_details(html: str) -> str:
             label_td = tds[2]
             value_td = tds[3]
             label_text = re.sub(r"<[^>]+>", "", label_td.group(2)).strip().lower().rstrip(":")
-            fixed_val = _BANK_DETAIL_VALUES.get(label_text)
+            fixed_val = bank_vals.get(label_text)
             if fixed_val is None:
                 return row
             # Replace value cell content with fixed value
@@ -336,6 +524,7 @@ def assemble_separate_documents(
     incoterm: str | None = None,
     payment_terms: str | None = None,
     remarks: str | None = None,
+    manufacturer_name: str | None = None,
 ) -> list[DocumentCreate]:
     """Build four separate documents: Quotation, TDS, COA, MSDS. Terms are only in Quotation (from AI output, not appended)."""
     # Quotation: do not append terms here — the AI-generated quotation already includes TERMS & CONDITIONS once (from prompt).
@@ -348,9 +537,12 @@ def assemble_separate_documents(
         q_heading = '<h1 style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;">QUOTATION</h1>'
         q_html = q_heading + q_html
     q_html = QUOTATION_WRAPPER + q_html + QUOTATION_WRAPPER_END
-    q_html = _force_bank_details(q_html)
-    if product_type == ProductType.chemical:
-        q_html = _force_make_vertex_chemicals(q_html)
+    q_html = _force_bank_details(q_html, product_type=product_type)
+    q_html = _apply_make_in_quotation_items(
+        q_html, product_type, manufacturer_name, product_name
+    )
+    if product_type == ProductType.engineering:
+        q_html = _strip_engineering_quotation_brand_block(q_html)
     q_html = _ensure_currency_in_totals(q_html, local_export)
     if quotation_no:
         q_html = _inject_quotation_no(q_html, quotation_no)
@@ -390,25 +582,46 @@ def assemble_separate_documents(
 
     def _build_doc(doc_type_key: str, raw_text: str, sec_product: str, is_coa: bool = False) -> DocumentCreate:
         """Clean text, convert to HTML, prepend single heading."""
-        cleaned = _clean_doc_text(raw_text)
-        body_html = text_to_html(cleaned)
-        title = _DOC_TITLES[doc_type_key]
-        heading = f'<h1 style="{_H1_STYLE}">{title}</h1>'
-        # Strip any remaining duplicate <h1> that matches this doc's title
-        body_html = re.sub(
-            rf'<h1[^>]*>\s*{re.escape(title)}\s*</h1>',
-            "",
-            body_html,
-            flags=re.IGNORECASE,
+        raw_use = raw_text
+        if doc_type_key == "tds" and product_type == ProductType.engineering:
+            raw_use = _strip_engineering_tds_commercial_lines(raw_use)
+        cleaned = _clean_doc_text(raw_use)
+        body_html = text_to_html(
+            cleaned,
+            tight_spacing=(doc_type_key == "tds" and product_type == ProductType.engineering),
         )
+        if doc_type_key == "tds" and product_type == ProductType.engineering:
+            pname = escape((sec_product or product_name or "Product").strip())
+            heading = (
+                f'<h1 class="engineering-tech-title" style="{_H1_STYLE}">{pname}</h1>'
+                f'<h2 class="engineering-tech-subtitle" style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;font-size:12pt;margin:6px 0 12px 0;">TECHNICAL DESCRIPTION</h2>'
+            )
+            body_html = re.sub(
+                rf'<h1[^>]*>\s*{re.escape(pname)}\s*</h1>',
+                "",
+                body_html,
+                flags=re.IGNORECASE,
+                count=1,
+            )
+        else:
+            title = _DOC_TITLES[doc_type_key]
+            heading = f'<h1 style="{_H1_STYLE}">{title}</h1>'
+            body_html = re.sub(
+                rf'<h1[^>]*>\s*{re.escape(title)}\s*</h1>',
+                "",
+                body_html,
+                flags=re.IGNORECASE,
+            )
         full_html = heading + "\n" + body_html
         if is_coa:
             full_html = '<div class="coa-section">' + full_html + "</div>"
+        elif doc_type_key == "tds" and product_type == ProductType.engineering:
+            full_html = '<div class="engineering-tech-doc">' + full_html + "</div>"
         dt = {"tds": DocumentType.tds, "coa": DocumentType.coa, "msds": DocumentType.msds}[doc_type_key]
         return DocumentCreate(**common_base, product_name=sec_product, doc_type=dt, html_content=full_html)
 
-    # TDS: one document per product (section)
-    tds_pattern = r"#\s*TECHNICAL DATA SHEET\s*\(TDS\)"
+    # TDS: one document per product (section) — chemical TDS or engineering TECHNICAL DESCRIPTION
+    tds_pattern = r"#\s*(?:TECHNICAL DATA SHEET\s*\(TDS\)|TECHNICAL DESCRIPTION)"
     tds_sections_with_name = _split_sections_with_product_name(tds_text, tds_pattern, product_name)
     for tds_sec, sec_product in tds_sections_with_name:
         if tds_sec.strip():

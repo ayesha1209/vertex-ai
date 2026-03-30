@@ -54,25 +54,42 @@ EXPORT_PRINT_CSS = """
   }
   ul, ol {
     font-size: 10px !important;
-    margin: 3px 0 !important;
-    padding-left: 1.2em !important;
+    margin: 4px 0 8px 0 !important;
+    padding-left: 1.35em !important;
+  }
+  ul {
+    list-style-type: disc !important;
+    list-style-position: outside !important;
+  }
+  ol {
+    list-style-type: decimal !important;
+    list-style-position: outside !important;
+  }
+  ul ul, ol ol, ul ol, ol ul {
+    margin-top: 2px !important;
+    margin-bottom: 4px !important;
+  }
+  ul ul {
+    list-style-type: circle !important;
   }
   li {
-    margin: 2px 0 !important;
-    line-height: 1.35 !important;
+    margin: 3px 0 !important;
+    line-height: 1.4 !important;
+    display: list-item !important;
   }
   strong, b {
     font-weight: 600 !important;
   }
   
-  /* Tables */
+  /* Tables (TDS / technical: pipe tables sit cleanly after paragraphs and lists) */
   table {
     border-collapse: collapse !important;
     width: 100% !important;
     max-width: 100% !important;
-    margin: 5px 0 !important;
+    margin: 8px 0 !important;
     font-size: 10px !important;
     line-height: 1.3 !important;
+    page-break-inside: auto !important;
   }
   th, td {
     border: 1px solid #333 !important;
@@ -107,6 +124,51 @@ EXPORT_PRINT_CSS = """
     page-break-after: always !important;
   }
   
+  /* Engineering technical description (TDS) — larger type, readable on A4 */
+  .engineering-tech-doc {
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+  }
+  .engineering-tech-doc h1,
+  .engineering-tech-doc h1.engineering-tech-title {
+    font-size: 17px !important;
+    margin: 0 0 8px 0 !important;
+  }
+  .engineering-tech-doc h2,
+  .engineering-tech-doc h2.engineering-tech-subtitle {
+    font-size: 13px !important;
+    margin: 8px 0 6px 0 !important;
+  }
+  .engineering-tech-doc .section-heading {
+    font-size: 13px !important;
+    margin: 10px 0 6px 0 !important;
+  }
+  .engineering-tech-doc p {
+    font-size: 11.5px !important;
+    line-height: 1.4 !important;
+    margin: 4px 0 !important;
+  }
+  .engineering-tech-doc ul,
+  .engineering-tech-doc ol {
+    font-size: 11.5px !important;
+    margin: 6px 0 10px 0 !important;
+  }
+  .engineering-tech-doc li {
+    font-size: 11.5px !important;
+    line-height: 1.45 !important;
+    margin: 4px 0 !important;
+  }
+  .engineering-tech-doc table {
+    font-size: 11.5px !important;
+    margin: 10px 0 !important;
+  }
+  .engineering-tech-doc th,
+  .engineering-tech-doc td {
+    font-size: 11.5px !important;
+    padding: 5px 7px !important;
+    line-height: 1.4 !important;
+  }
+
   /* COA section */
   .coa-section {
     font-size: 11px !important;
@@ -191,6 +253,34 @@ EXPORT_PRINT_CSS = """
   .items-table tr:first-child td,
   .items-table thead td,
   .items-table thead th {
+    background: #BBBBBB !important;
+    background-color: #BBBBBB !important;
+    font-weight: bold !important;
+  }
+  /* ── Weight & packing table (engineering quotation) ── */
+  .weight-packing-table {
+    table-layout: fixed !important;
+  }
+  .weight-packing-table td:nth-child(1),
+  .weight-packing-table th:nth-child(1) {
+    width: 18% !important;
+  }
+  .weight-packing-table td:nth-child(2),
+  .weight-packing-table th:nth-child(2),
+  .weight-packing-table td:nth-child(3),
+  .weight-packing-table th:nth-child(3) {
+    width: 11% !important;
+    text-align: right !important;
+  }
+  .weight-packing-table td:nth-child(4),
+  .weight-packing-table th:nth-child(4) {
+    width: 28% !important;
+  }
+  .weight-packing-table td:nth-child(5),
+  .weight-packing-table th:nth-child(5) {
+    width: 32% !important;
+  }
+  .weight-packing-table tr:first-child td {
     background: #BBBBBB !important;
     background-color: #BBBBBB !important;
     font-weight: bold !important;
