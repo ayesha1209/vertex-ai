@@ -19,6 +19,8 @@ class DocumentType(str, Enum):
     combined = "combined"  # Legacy: no longer generated; kept for existing DB docs
     proforma_invoice = "proforma_invoice"  # Derived from quotation
     invoice = "invoice"  # Derived from quotation
+    commercial_invoice = "commercial_invoice"  # Derived from quotation (export sale)
+    tax_invoice = "tax_invoice"  # Derived from quotation (domestic/GST sale)
 
 
 class RowInput(BaseModel):

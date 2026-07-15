@@ -33,7 +33,7 @@ from app.schemas.document import (
 from app.prompts.vertex_prompts import DEFAULT_TERMS
 from app.services.document_generation import generate_documents_for_row
 from app.services.export import html_to_pdf
-from app.services.invoice_generator import transform_quotation_to_invoice
+from app.services.invoice_generator import build_invoice_document, extract_quotation_data
 from app.utils.excel_parser import parse_excel_to_previews
 
 
@@ -258,6 +258,7 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                     "incoterm": getattr(doc, "incoterm", None),
                     "payment_terms": getattr(doc, "payment_terms", None),
                     "remarks": getattr(doc, "remarks", None),
+                    "email_id": getattr(row, "email_id", None),
                 }
                 try:
                     result = documents_collection.insert_one(mongo_doc)
@@ -831,14 +832,17 @@ async def delete_batch(batch_id: str) -> dict[str, int]:
         ) from e
 
 
+_INVOICE_DOC_TYPES = ["proforma_invoice", "invoice", "commercial_invoice", "tax_invoice"]
+
+
 @router.get("/documents/batch/{batch_id}/invoices", response_model=ListDocumentsResponse)
 async def list_batch_invoices(batch_id: str) -> ListDocumentsResponse:
-    """Return proforma invoices and invoices that belong to a batch."""
+    """Return proforma invoices, invoices, commercial invoices and tax invoices that belong to a batch."""
     if not batch_id or not batch_id.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch id required")
     try:
         cursor = documents_collection.find(
-            {"batch_id": batch_id.strip(), "doc_type": {"$in": ["proforma_invoice", "invoice"]}},
+            {"batch_id": batch_id.strip(), "doc_type": {"$in": _INVOICE_DOC_TYPES}},
             sort=[("doc_type", 1), ("created_at", 1)],
         )
         docs: List[DocumentSummary] = []
@@ -866,11 +870,12 @@ async def list_batch_invoices(batch_id: str) -> ListDocumentsResponse:
 
 @router.post("/documents/batch/{batch_id}/invoices/generate", response_model=ListDocumentsResponse)
 async def generate_batch_invoices(batch_id: str) -> ListDocumentsResponse:
-    """Generate (or re-generate) Proforma Invoice + Invoice for a batch.
+    """Generate (or re-generate) Proforma Invoice + Invoice + Commercial/Tax Invoice for a batch.
 
-    Finds the quotation for the batch, transforms its HTML, persists both
-    documents and returns them.  Existing proforma_invoice / invoice docs for
-    this batch are replaced.
+    Finds the quotation for the batch, derives all document variants from it,
+    persists them, and returns them. Existing invoice-family docs for this
+    batch are replaced. Commercial Invoice is generated for export sales,
+    Tax Invoice for domestic/GST sales (based on the quotation's local_export).
     """
     if not batch_id or not batch_id.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Batch id required")
@@ -896,14 +901,25 @@ async def generate_batch_invoices(batch_id: str) -> ListDocumentsResponse:
         )
 
     local_export: str | None = quotation.get("local_export")
+    is_local = (local_export or "").strip().lower() == "local"
 
-    # Build the two HTML variants
-    pi_html = transform_quotation_to_invoice(source_html, "proforma_invoice", local_export)
-    inv_html = transform_quotation_to_invoice(source_html, "invoice", local_export)
+    # Build all HTML variants — same box layout for all four, via build_invoice_document.
+    # Extract the quotation's data once and reuse it across all 3 calls rather than
+    # letting each one independently re-scan the same source_html for the same tables.
+    common_invoice_kwargs: dict[str, Any] = dict(
+        invoice_no=quotation.get("quotation_no"),
+        buyer_name=quotation.get("buyer_name"),
+        country=quotation.get("country"),
+        port=quotation.get("port"),
+        incoterm=quotation.get("incoterm"),
+        payment_terms=quotation.get("payment_terms"),
+    )
+    extracted = extract_quotation_data(source_html)
+    ci_or_tax_type = "tax_invoice" if is_local else "commercial_invoice"
 
-    # Delete existing proforma_invoice / invoice docs for this batch
+    # Delete existing invoice-family docs for this batch
     documents_collection.delete_many(
-        {"batch_id": batch_id, "doc_type": {"$in": ["proforma_invoice", "invoice"]}}
+        {"batch_id": batch_id, "doc_type": {"$in": _INVOICE_DOC_TYPES}}
     )
 
     now = now_local()
@@ -920,14 +936,22 @@ async def generate_batch_invoices(batch_id: str) -> ListDocumentsResponse:
     common["created_at"] = now
     common["updated_at"] = now
 
-    pi_doc = {**common, "doc_type": "proforma_invoice", "html_content": pi_html}
-    inv_doc = {**common, "doc_type": "invoice", "html_content": inv_html}
+    docs_to_insert = [
+        {
+            **common,
+            "doc_type": dt,
+            "html_content": build_invoice_document(
+                source_html, dt, local_export, extracted=extracted, **common_invoice_kwargs
+            ),
+        }
+        for dt in ("proforma_invoice", "invoice", ci_or_tax_type)
+    ]
 
-    result = documents_collection.insert_many([pi_doc, inv_doc])
+    result = documents_collection.insert_many(docs_to_insert)
     inserted_ids = result.inserted_ids
 
     created: List[DocumentSummary] = []
-    for oid, d in zip(inserted_ids, [pi_doc, inv_doc]):
+    for oid, d in zip(inserted_ids, docs_to_insert):
         created.append(
             DocumentSummary(
                 id=str(oid),
@@ -1092,10 +1116,11 @@ def _extract_quotation_no_from_html(html: str) -> str | None:
 
 
 @router.get("/documents/{doc_id}/pdf")
-async def get_pdf(doc_id: str) -> Response:
-    """Return document as PDF file. Filename by doc_type: QF_* for quotation, TDS_*, COA_*, MSDS_*."""
+async def get_pdf(doc_id: str, seq: int | None = None) -> Response:
+    """Return document as PDF file. Optional ?seq=N overrides the quotation/invoice number with VERT/N/YEAR."""
     import re
     from datetime import datetime
+    from app.utils.quotation_number import build_quotation_no
 
     oid: ObjectId
     try:
@@ -1110,6 +1135,26 @@ async def get_pdf(doc_id: str) -> Response:
     html = doc.get("html_content") or ""
     if not html.strip():
         html = "<p>&nbsp;</p>"
+
+    # If caller supplies a sequence number, replace the quotation/invoice number in HTML
+    if seq is not None and 1 <= seq <= 9999:
+        new_qno = build_quotation_no(seq)
+        # Quotation layout: label and value are adjacent <td> cells —
+        # <td>Quotation No</td><td>VALUE</td>
+        html = re.sub(
+            r"(<td[^>]*>\s*(?:Quotation|Proforma\s+Invoice|Invoice)\s+No\s*</td>\s*<td[^>]*>)[^<]*(</td>)",
+            rf"\g<1>{new_qno}\g<2>",
+            html,
+            flags=re.IGNORECASE,
+        )
+        # Invoice-family layout (build_invoice_document): label and value are
+        # combined in one <td> — <td><strong>Proforma Invoice No.:</strong><br/>VALUE</td>
+        html = re.sub(
+            r"(<strong>\s*(?:Proforma\s+Invoice|Invoice)\s+No\.?:?\s*</strong>\s*<br\s*/?>\s*)[^<]*(</td>)",
+            rf"\g<1>{new_qno}\g<2>",
+            html,
+            flags=re.IGNORECASE,
+        )
     letterhead = doc.get("letterhead")
     local_export = doc.get("local_export")
     product_type = doc.get("product_type")
@@ -1156,6 +1201,16 @@ async def get_pdf(doc_id: str) -> Response:
             qno = _sanitize_filename(qno_raw, 30)
             company = _sanitize_filename(doc.get("company_name") or "Company", 30)
             filename = f"INV_{qno}_{company}_{buyer}_{product}.pdf"
+        elif doc_type == "commercial_invoice":
+            qno_raw = doc.get("quotation_no") or "CI"
+            qno = _sanitize_filename(qno_raw, 30)
+            company = _sanitize_filename(doc.get("company_name") or "Company", 30)
+            filename = f"CI_{qno}_{company}_{buyer}_{product}.pdf"
+        elif doc_type == "tax_invoice":
+            qno_raw = doc.get("quotation_no") or "TAX"
+            qno = _sanitize_filename(qno_raw, 30)
+            company = _sanitize_filename(doc.get("company_name") or "Company", 30)
+            filename = f"TAX_{qno}_{company}_{buyer}_{product}.pdf"
         else:
             date_str = datetime.now().strftime("%d%m%Y")
             filename = f"{buyer}_{product}_{date_str}.pdf"

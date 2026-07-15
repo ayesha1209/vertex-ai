@@ -95,6 +95,16 @@ _Q_TABLE_ITEMS = 2
 _Q_TABLE_TOTALS = 3
 _Q_TABLE_WEIGHT_PACKING = 4
 
+# Content signatures used to identify a quotation table by its first row's
+# text when the table can't be identified some other way (e.g. by CSS class).
+# Shared with invoice_generator.py's content-based extraction fallback (used
+# when a quotation's table CSS classes were stripped, e.g. by a TipTap
+# re-save) so the two stay in sync — a table this module can classify should
+# always be findable by invoice_generator.py too.
+CUSTOMER_TABLE_SIGNATURES = ("bill to", "buyer")
+TOTALS_TABLE_SIGNATURES = ("total amount",)
+ITEMS_TABLE_SIGNATURES = ("description of goods", "unit price", "part number")
+
 
 def _detect_table_type(table_rows: list[str]) -> int:
     """Detect quotation table type based on content."""
@@ -117,18 +127,16 @@ def _detect_table_type(table_rows: list[str]) -> int:
         or first_row.startswith("no|")
         or first_row.startswith("sr.")
         or first_row.startswith("sr|")
-        or "description of goods" in first_row
-        or "part number" in first_row
-        or "unit price" in first_row
+        or any(sig in first_row for sig in ITEMS_TABLE_SIGNATURES)
     ):
         return _Q_TABLE_ITEMS
 
     # Totals table: contains "Total Amount"
-    if "total amount" in first_row.lower():
+    if any(sig in first_row for sig in TOTALS_TABLE_SIGNATURES):
         return _Q_TABLE_TOTALS
 
-    # Customer table: contains "Bill To"
-    if "bill to" in first_row.lower():
+    # Customer table: contains "Bill To" (chemical) or starts with "Buyer" (engineering header block)
+    if any(sig in first_row for sig in CUSTOMER_TABLE_SIGNATURES):
         return _Q_TABLE_CUSTOMER
 
     # Delivery table: contains "Delivery" as first cell

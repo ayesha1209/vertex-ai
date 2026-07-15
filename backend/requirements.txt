@@ -11,3 +11,5 @@ html2docx
 python-docx
 xhtml2pdf
 weasyprint
+msal
+httpx

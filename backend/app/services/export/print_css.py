@@ -191,7 +191,7 @@ EXPORT_PRINT_CSS = """
     margin: 0 0 4px 0 !important;
   }
   .quotation-page table {
-    margin: 4px 0 !important;
+    margin: 6px 0 !important;
     width: 100% !important;
   }
   .quotation-page th,
@@ -293,21 +293,28 @@ EXPORT_PRINT_CSS = """
     text-align: right !important;
     font-weight: bold !important;
   }
-  /* ── Customer table: normal (no gray); labels stay bold ── */
+  /* ── Customer table: label columns get a light tint for visual hierarchy
+     (matches the in-browser editor's own styling — previously forced to
+     plain white here, so the printed/exported PDF looked flatter than the
+     editor preview) ── */
   .customer-table td {
     background: #ffffff !important;
     background-color: #ffffff !important;
   }
   .customer-table td:nth-child(odd) {
     font-weight: bold !important;
+    background: #f9f9f9 !important;
+    background-color: #f9f9f9 !important;
   }
-  /* ── Delivery table: normal (no gray); labels stay bold ── */
+  /* ── Delivery table: same label tint as customer-table ── */
   .delivery-table td {
     background: #ffffff !important;
     background-color: #ffffff !important;
   }
   .delivery-table td:nth-child(odd) {
     font-weight: bold !important;
+    background: #f9f9f9 !important;
+    background-color: #f9f9f9 !important;
   }
   /* Terms + signatory: allow flow; no extra space before block */
   .terms-sig-wrapper {

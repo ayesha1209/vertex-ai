@@ -252,6 +252,7 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
         payment_terms=row.payment_terms,
         remarks=row.remarks,
         manufacturer_name=(row.manufacturer_name or "").strip() or None,
+        date=row.date,
     )
 
     if not is_multi:

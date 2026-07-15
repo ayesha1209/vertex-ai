@@ -15,7 +15,7 @@ Packing: [Packing]
 ---
 Certificate of Analysis (15 Test Parameters)
 Sr. No.|Test Parameter|Specification|Result|Test Method
-1|Assay ([Chemical Formula])|≥ 99.0 %|[Result %]|Titration
+1|Assay ([Chemical Formula])|[Purity Specification]|[Result %]|Titration
 2|Appearance|White crystalline powder|Complies|Visual
 3|Moisture|≤ 0.50 %|[Result %]|Oven Dry
 4|Water Insoluble Matter|≤ 0.05 %|[Result %]|Gravimetric
@@ -56,7 +56,7 @@ TDS_TEMPLATE = """
 ---
 2. Typical Physical & Chemical Properties (Anhydrous Grade)
 Parameter|Specification|Test Method
-Purity ([Chemical Formula])|≥ 99.0%|Titration
+Purity ([Chemical Formula])|[Purity Specification]|Titration
 Moisture|≤ 0.5%|Oven Dry
 Water Insoluble Matter|≤ 0.05%|Gravimetric
 pH (5% Solution)|6.0 – 8.0|pH Meter
@@ -137,7 +137,7 @@ o Use PPE during handling
 ---
 Section 3: Composition / Information on Ingredients
 Component|CAS No.|Concentration
-[Product Name] ([Chemical Formula])|[CAS No.]|≥ 99%
+[Product Name] ([Chemical Formula])|[CAS No.]|[Purity Specification]
 ---TABLE---
 ---
 Section 4: First Aid Measures

@@ -7,6 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.db.mongo import client
 from app.routes.documents import router as documents_router, start_batch_workers, stop_batch_workers
+from app.routes.auth import router as auth_router
+from app.routes.admin import router as admin_router
+from app.routes.email import router as email_router
 
 # Enable logging
 logging.basicConfig(level=logging.INFO, format='%(name)s - %(levelname)s - %(message)s')
@@ -39,6 +42,9 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(documents_router)
+    app.include_router(auth_router)
+    app.include_router(admin_router)
+    app.include_router(email_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

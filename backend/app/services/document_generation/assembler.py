@@ -279,6 +279,19 @@ def _apply_make_in_quotation_items(
     return _replace_make_in_items_table(html, mfr)
 
 
+def _inject_date(html: str, date: str | None) -> str:
+    """Replace the date value cell next to 'Quotation Date' / 'Date' in the customer table."""
+    if not date or not str(date).strip():
+        return html
+    safe = escape(str(date).strip())
+    pattern = re.compile(
+        r"(<td[^>]*>\s*(?:Quotation\s+)?Date\s*</td>\s*<td[^>]*>)([^<]*)(</td>)",
+        re.IGNORECASE,
+    )
+    result = pattern.sub(rf"\g<1>{safe}\g<3>", html)
+    return result
+
+
 def _inject_quotation_no(html: str, quotation_no: str | None) -> str:
     """Replace the value cell next to 'Quotation No' in the customer table with the given number.
     Ensures the quotation never shows '-' or N/A when we have a generated number.
@@ -525,6 +538,7 @@ def assemble_separate_documents(
     payment_terms: str | None = None,
     remarks: str | None = None,
     manufacturer_name: str | None = None,
+    date: str | None = None,
 ) -> list[DocumentCreate]:
     """Build four separate documents: Quotation, TDS, COA, MSDS. Terms are only in Quotation (from AI output, not appended)."""
     # Quotation: do not append terms here — the AI-generated quotation already includes TERMS & CONDITIONS once (from prompt).
@@ -546,6 +560,8 @@ def assemble_separate_documents(
     q_html = _ensure_currency_in_totals(q_html, local_export)
     if quotation_no:
         q_html = _inject_quotation_no(q_html, quotation_no)
+    if date:
+        q_html = _inject_date(q_html, date)
     hsn_stripped = str(hsn_code).strip() if hsn_code else ""
     if hsn_stripped:
         q_html = _inject_hsn_in_items(q_html, hsn_stripped, product_name)
@@ -594,7 +610,7 @@ def assemble_separate_documents(
             pname = escape((sec_product or product_name or "Product").strip())
             heading = (
                 f'<h1 class="engineering-tech-title" style="{_H1_STYLE}">{pname}</h1>'
-                f'<h2 class="engineering-tech-subtitle" style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;font-size:12pt;margin:6px 0 12px 0;">TECHNICAL DESCRIPTION</h2>'
+                f'<h2 class="engineering-tech-subtitle" style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;font-size:12pt;margin:6px 0 12px 0;">TECHNICAL DATA SHEET</h2>'
             )
             body_html = re.sub(
                 rf'<h1[^>]*>\s*{re.escape(pname)}\s*</h1>',

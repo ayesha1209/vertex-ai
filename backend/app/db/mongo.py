@@ -13,6 +13,7 @@ db = client[settings.MONGODB_DB_NAME]
 documents_collection = db["documents"]
 manual_documents_collection = db["manual_documents"]
 terms_collection = db["terms_and_conditions"]
+shipment_tracking_collection = db["shipment_tracking"]
 # Single document id for terms (chemical + engineering HTML)
 TERMS_DOC_ID = "default"
 
