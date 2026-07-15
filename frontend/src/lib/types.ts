@@ -1,6 +1,16 @@
 export type ProductType = "chemical" | "engineering";
 
-export type DocumentType = "quotation" | "coa" | "coc" | "tds" | "msds" | "combined" | "proforma_invoice" | "invoice";
+export type DocumentType =
+  | "quotation"
+  | "coa"
+  | "coc"
+  | "tds"
+  | "msds"
+  | "combined"
+  | "proforma_invoice"
+  | "invoice"
+  | "commercial_invoice"
+  | "tax_invoice";
 
 export interface RowPreview {
   id: number;

@@ -10,9 +10,34 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import { generateJSON } from "@tiptap/html";
 import { TermsSigWrapper } from "./TermsSigWrapper";
+import { PreservedSectionDiv } from "./PreservedSectionDiv";
 import { recalcQuotationTotals } from "../../lib/recalcQuotationTotals";
 
 const RECALC_DEBOUNCE_MS = 500;
+
+/**
+ * Preserves the table's `class` attribute (e.g. "customer-table",
+ * "items-table", "totals-table", "delivery-table", "weight-packing-table")
+ * across load/edit/save. TipTap's default Table extension doesn't declare
+ * `class` as a recognized attribute, so it's silently dropped on every save
+ * — this broke the backend's class-based table lookups (currency
+ * normalization, Make/HSN injection, bank-detail injection, invoice-family
+ * document generation) for any quotation ever opened in this editor, since
+ * those all identify which table is which by its class. Same fix pattern
+ * already used for the terms/signature wrapper div — see TermsSigWrapper.ts.
+ */
+const TableWithClass = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      class: {
+        default: null,
+        parseHTML: (element) => (element as HTMLElement).getAttribute("class"),
+        renderHTML: (attributes) => (attributes.class ? { class: attributes.class } : {}),
+      },
+    };
+  },
+});
 
 interface Props {
   initialHtml: string | null;
@@ -30,13 +55,14 @@ export function VertexEditor({ initialHtml, onChange }: Props) {
       TextAlign.configure({
         types: ["heading", "paragraph"]
       }),
-      Table.configure({
+      TableWithClass.configure({
         resizable: true
       }),
       TableRow,
       TableHeader,
       TableCell,
-      TermsSigWrapper
+      TermsSigWrapper,
+      PreservedSectionDiv
     ],
     content: "",
     onUpdate({ editor: ed }) {
@@ -59,12 +85,25 @@ export function VertexEditor({ initialHtml, onChange }: Props) {
             }
             scrollable = scrollable.parentElement;
           }
+          // Save cursor position before content replacement
+          const { from, to } = ed.state.selection;
+          const docSize = ed.state.doc.content.size;
           ed.commands.setContent(updated, false);
           onChange(updated);
+          // Restore cursor: clamp to new doc size so we never go out-of-bounds
           requestAnimationFrame(() => {
+            try {
+              const newDocSize = ed.state.doc.content.size;
+              const clampedFrom = Math.min(from, newDocSize - 1);
+              const clampedTo = Math.min(to, newDocSize - 1);
+              ed.commands.setTextSelection({ from: clampedFrom, to: clampedTo });
+            } catch {
+              // ignore if cursor restore fails
+            }
             if (typeof window !== "undefined") window.scrollTo(window.scrollX, windowScrollY);
             if (scrollable && savedScrollTop !== null) scrollable.scrollTop = savedScrollTop;
           });
+          void docSize; // suppress unused warning
         }
       }, RECALC_DEBOUNCE_MS);
     }

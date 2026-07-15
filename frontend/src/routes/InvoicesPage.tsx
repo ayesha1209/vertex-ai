@@ -74,7 +74,7 @@ export function InvoicesPage() {
   const firstDoc = documents[0];
   const subtitle = firstDoc
     ? `${firstDoc.buyer_name} – ${firstDoc.product_name}`
-    : "Proforma Invoice & Invoice";
+    : "Proforma Invoice, Invoice & Commercial/Tax Invoice";
 
   const hasInvoices = documents.length > 0;
 
@@ -103,7 +103,7 @@ export function InvoicesPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-800">
-              Proforma Invoice &amp; Invoice
+              Proforma Invoice, Invoice &amp; Commercial/Tax Invoice
             </h2>
             <p className="mt-0.5 text-sm text-slate-500">
               Derived from the quotation — same content, updated headings and numbers.
@@ -155,8 +155,8 @@ export function InvoicesPage() {
             </div>
             <p className="mb-1 text-sm font-medium text-slate-700">No invoices generated yet</p>
             <p className="mb-5 text-xs text-slate-500">
-              Click &ldquo;Generate Invoices&rdquo; to create the Proforma Invoice and Invoice
-              from the batch quotation.
+              Click &ldquo;Generate Invoices&rdquo; to create the Proforma Invoice, Invoice, and
+              Commercial Invoice/Tax Invoice from the batch quotation.
             </p>
             <button
               type="button"

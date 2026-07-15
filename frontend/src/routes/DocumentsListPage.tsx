@@ -181,7 +181,7 @@ export function DocumentsListPage() {
 
   const dashboardSubtitle =
     productTypeFilter === "engineering"
-      ? "Engineering batches. Click a row to open Quotation, TDS, COA, MSDS."
+      ? "Engineering batches. Click a row to open Quotation, TDS."
       : productTypeFilter === "chemical"
         ? "Chemical batches. Click a row to open Quotation, TDS, COA, MSDS."
         : "Batches. Click a row to open documents (Quotation, TDS, COA, MSDS).";

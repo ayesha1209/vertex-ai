@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useActiveJob } from "../../context/ActiveJobContext";
+import { useAuth } from "../../context/AuthContext";
 
 const navItems: { to: string; label: string; step?: string; showWhen?: string }[] = [
   { to: "/", label: "Upload", step: "1" },
   { to: "/generate", label: "Generate", step: "2", showWhen: "activeJob" },
   { to: "/documents", label: "Dashboard" },
+  { to: "/send-emails", label: "Send Emails" },
   { to: "/manual", label: "Manual Docs" },
   { to: "/terms", label: "Terms & Conditions" },
 ];
@@ -13,6 +15,7 @@ const navItems: { to: string; label: string; step?: string; showWhen?: string }[
 export function Header() {
   const location = useLocation();
   const { activeJobId } = useActiveJob();
+  const { isAuthenticated, checking } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isActive = (path: string) => {
@@ -21,10 +24,19 @@ export function Header() {
     if (path === "/manual") return location.pathname === "/manual";
     if (path === "/generate") return location.pathname === "/generate";
     if (path === "/terms") return location.pathname === "/terms";
+    if (path === "/send-emails") return location.pathname === "/send-emails";
+    if (path === "/admin") return location.pathname === "/admin" || location.pathname.startsWith("/admin/");
+    if (path === "/login") return location.pathname === "/login";
     return false;
   };
 
-  const visibleNavItems = navItems.filter((item) => {
+  const allNavItems = [
+    ...navItems,
+    // Don't render the admin link at all while the session check is in flight
+    ...(checking ? [] : isAuthenticated ? [{ to: "/admin", label: "Admin" }] : [{ to: "/login", label: "Admin Login" }]),
+  ];
+
+  const visibleNavItems = allNavItems.filter((item) => {
     if (item.showWhen === "activeJob" && !activeJobId) return false;
     return true;
   });

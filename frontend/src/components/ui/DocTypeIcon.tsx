@@ -1,4 +1,15 @@
-const DOC_TYPES = ["quotation", "coa", "coc", "tds", "msds", "combined", "proforma_invoice", "invoice"] as const;
+const DOC_TYPES = [
+  "quotation",
+  "coa",
+  "coc",
+  "tds",
+  "msds",
+  "combined",
+  "proforma_invoice",
+  "invoice",
+  "commercial_invoice",
+  "tax_invoice",
+] as const;
 type DocType = (typeof DOC_TYPES)[number];
 
 interface DocTypeIconProps {
@@ -37,6 +48,14 @@ const icons: Record<DocType, { bg: string; path: string }> = {
   },
   invoice: {
     bg: "bg-orange-100 text-orange-600",
+    path: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z",
+  },
+  commercial_invoice: {
+    bg: "bg-teal-100 text-teal-600",
+    path: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z",
+  },
+  tax_invoice: {
+    bg: "bg-fuchsia-100 text-fuchsia-600",
     path: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z",
   },
 };

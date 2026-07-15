@@ -4,6 +4,7 @@ import { useActiveJob } from "../context/ActiveJobContext";
 import { useJobStream, getActiveJobId } from "../hooks/useJobStream";
 import type { RowProgress } from "../hooks/useJobStream";
 import { PageLayout } from "../components/ui/PageLayout";
+import { SendEmailModal } from "../components/SendEmailModal";
 
 function truncate(s: string, max: number) {
   return s.length > max ? s.slice(0, max) + "…" : s;
@@ -97,6 +98,7 @@ export function GeneratePage() {
   const [streamState, { stop }] = useJobStream(jobId, () => setActiveJobId(null));
 
   const [showAll, setShowAll] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   useEffect(() => {
     if (!jobId) navigate("/", { replace: true });
@@ -125,6 +127,7 @@ export function GeneratePage() {
   const visibleRows = showAll ? allRows : allRows.slice(0, PREVIEW_COUNT);
 
   return (
+    <>
     <PageLayout
       step="Step 3 of 3"
       title="Generating documents"
@@ -144,6 +147,18 @@ export function GeneratePage() {
           {(streamState.status === "streaming" || streamState.status === "done") && count > 0 && (
             <button type="button" onClick={() => navigate("/documents")} className="btn-outline">
               Open Dashboard
+            </button>
+          )}
+          {streamState.status === "done" && count > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowEmailModal(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Send Emails
             </button>
           )}
           {(streamState.status === "connecting" || streamState.status === "streaming" || streamState.status === "queued") && (
@@ -385,5 +400,13 @@ export function GeneratePage() {
         )}
       </div>
     </PageLayout>
+
+    {showEmailModal && docs[0]?.batch_id && (
+      <SendEmailModal
+        batchId={docs[0].batch_id}
+        onClose={() => setShowEmailModal(false)}
+      />
+    )}
+    </>
   );
 }

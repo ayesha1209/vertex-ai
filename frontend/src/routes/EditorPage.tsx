@@ -6,6 +6,8 @@ import { VertexEditor } from "../components/editor/VertexEditor";
 import { PageLayout } from "../components/ui/PageLayout";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 const IS_MANUAL = (doc: DocumentInDB) =>
   (doc.batch_id ?? "").startsWith("manual-");
 
@@ -22,6 +24,10 @@ export function EditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // PDF number picker modal
+  const [pdfModal, setPdfModal] = useState(false);
+  const [pdfSeq, setPdfSeq] = useState<number>(1);
+
   // Name modal state (shown on first save of a manual doc)
   const [nameModal, setNameModal] = useState(false);
   const [docTitle, setDocTitle] = useState("");
@@ -32,7 +38,25 @@ export function EditorPage() {
 
   const handleDownloadPdf = () => {
     if (!doc) return;
-    savePdf(doc.id);
+    // For quotation / proforma_invoice / invoice docs, offer number picker
+    const needsNumber = [
+      "quotation",
+      "proforma_invoice",
+      "invoice",
+      "commercial_invoice",
+      "tax_invoice",
+    ].includes(doc.doc_type);
+    if (needsNumber) {
+      setPdfModal(true);
+    } else {
+      savePdf(doc.id);
+    }
+  };
+
+  const handlePdfConfirm = () => {
+    if (!doc) return;
+    setPdfModal(false);
+    savePdf(doc.id, pdfSeq);
   };
 
   useEffect(() => {
@@ -139,6 +163,47 @@ export function EditorPage() {
       {doc && (
         <div className="card-elevated overflow-hidden p-4 sm:p-6">
           <VertexEditor initialHtml={doc.html_content} onChange={(html) => setCurrentHtml(html)} />
+        </div>
+      )}
+
+      {/* PDF number picker modal */}
+      {pdfModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setPdfModal(false); }}
+        >
+          <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
+            <div className="border-b border-slate-100 px-6 py-4">
+              <h2 className="text-base font-semibold text-slate-800">Select Document Number</h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Choose the number for this document. Format: <strong>VERT/{String(pdfSeq).padStart(3, "0")}/{CURRENT_YEAR}</strong>
+              </p>
+            </div>
+            <div className="flex flex-col gap-4 px-6 py-5">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-slate-600">Document Number <span className="text-red-500">*</span></span>
+                <input
+                  className="input input-sm"
+                  type="number"
+                  min={1}
+                  max={9999}
+                  value={pdfSeq}
+                  onChange={(e) => setPdfSeq(Math.max(1, Math.min(9999, parseInt(e.target.value) || 1)))}
+                  onKeyDown={(e) => e.key === "Enter" && handlePdfConfirm()}
+                  autoFocus
+                />
+              </label>
+              <p className="text-xs text-slate-500">
+                Final number: <strong className="text-slate-700">VERT/{String(pdfSeq).padStart(3, "0")}/{CURRENT_YEAR}</strong>
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-6 py-4">
+              <button type="button" onClick={() => setPdfModal(false)} className="btn-ghost btn-sm">Cancel</button>
+              <button type="button" onClick={handlePdfConfirm} className="btn-primary btn-sm">
+                Download PDF
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

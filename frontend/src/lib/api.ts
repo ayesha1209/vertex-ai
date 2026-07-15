@@ -496,9 +496,12 @@ export async function generateBatchInvoices(batchId: string): Promise<ListDocume
   return res.json();
 }
 
-/** Save document as PDF file (triggers browser download). */
-export async function savePdf(id: string): Promise<void> {
-  const pdfUrl = `${API_BASE_URL}/documents/${encodeURIComponent(id)}/pdf`;
+/** Save document as PDF file (triggers browser download). Optional seq overrides quotation number. */
+export async function savePdf(id: string, seq?: number): Promise<void> {
+  let pdfUrl = `${API_BASE_URL}/documents/${encodeURIComponent(id)}/pdf`;
+  if (seq != null) {
+    pdfUrl += `?seq=${seq}`;
+  }
 
   // Direct link to the PDF endpoint. The backend sets
   // Content-Disposition: attachment, so the browser downloads instead of
@@ -514,12 +517,189 @@ export async function savePdf(id: string): Promise<void> {
 }
 
 /** Save multiple documents as PDFs (one after another, with short delay). */
-export async function saveAllPdf(ids: string[]): Promise<void> {
+export async function saveAllPdf(ids: string[], seq?: number): Promise<void> {
   for (const id of ids) {
     // eslint-disable-next-line no-await-in-loop
-    await savePdf(id);
+    await savePdf(id, seq);
     // eslint-disable-next-line no-await-in-loop
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Email API
+// ---------------------------------------------------------------------------
+
+export async function getSenderEmails(): Promise<string[]> {
+  const res = await fetch(`${API_BASE_URL}/email/senders`);
+  if (!res.ok) throw new Error("Failed to load sender emails");
+  const data = await res.json();
+  return Array.isArray(data.senders) ? data.senders : [];
+}
+
+export interface EmailSendResult {
+  email: string;
+  buyer_name: string;
+  status: "sent" | "error";
+  reason?: string;
+}
+
+export interface SendBatchEmailsResponse {
+  results: EmailSendResult[];
+  sent: number;
+  failed: number;
+}
+
+export async function sendBatchEmails(payload: {
+  batch_id: string;
+  sender_email: string;
+  doc_types: string[];
+}): Promise<SendBatchEmailsResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/email/send-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    throw normalizeNetworkError(e, "send-email");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Failed to send emails");
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Auth API (cookie-based — no tokens needed)
+// ---------------------------------------------------------------------------
+
+export async function adminLogin(password: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Login failed");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin shipment tracking API (cookies sent automatically)
+// ---------------------------------------------------------------------------
+
+const _adminOpts: RequestInit = { credentials: "include" };
+
+export interface ListBatchesParams {
+  q?: string;
+  entered_by?: string;
+  skip?: number;
+  limit?: number;
+}
+
+export async function listAdminBatches(params?: ListBatchesParams): Promise<{ batches: AdminBatch[]; total: number }> {
+  const p = new URLSearchParams();
+  if (params?.q) p.set("q", params.q);
+  if (params?.entered_by) p.set("entered_by", params.entered_by);
+  if (params?.skip != null) p.set("skip", String(params.skip));
+  if (params?.limit != null) p.set("limit", String(params.limit));
+  const qs = p.toString();
+  const res = await fetch(`${API_BASE_URL}/admin/batches${qs ? `?${qs}` : ""}`, _adminOpts);
+  if (!res.ok) throw new Error("Failed to load batches");
+  return res.json();
+}
+
+export async function listShipments(skip = 0, limit = 50): Promise<{ shipments: Shipment[]; total: number }> {
+  const res = await fetch(`${API_BASE_URL}/admin/shipments?skip=${skip}&limit=${limit}`, _adminOpts);
+  if (!res.ok) throw new Error("Failed to load shipments");
+  return res.json();
+}
+
+export async function createShipment(payload: { batch_id?: string; quotation_no?: string; buyer_name: string; product_name: string }): Promise<Shipment> {
+  const res = await fetch(`${API_BASE_URL}/admin/shipments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Failed to create shipment");
+  }
+  return res.json();
+}
+
+export async function getShipment(shipmentId: string): Promise<Shipment> {
+  const res = await fetch(`${API_BASE_URL}/admin/shipments/${shipmentId}`, _adminOpts);
+  if (!res.ok) throw new Error("Shipment not found");
+  return res.json();
+}
+
+export async function uploadShipmentDoc(shipmentId: string, docType: string, file: File): Promise<{ ok: boolean; doc_type: string; filename: string; all_uploaded: boolean }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE_URL}/admin/shipments/${shipmentId}/upload/${docType}`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Upload failed");
+  }
+  return res.json();
+}
+
+export function getShipmentDocUrl(shipmentId: string, docType: string): string {
+  return `${API_BASE_URL}/admin/shipments/${shipmentId}/files/${docType}`;
+}
+
+export async function deleteShipment(shipmentId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/admin/shipments/${shipmentId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Failed to delete shipment");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin types
+// ---------------------------------------------------------------------------
+
+export interface AdminBatch {
+  batch_id: string;
+  buyer_name: string;
+  product_name: string;
+  quotation_no?: string;
+  company_name?: string;
+  employee_name?: string;
+  created_at: string;
+}
+
+export interface ShipmentDocSlot {
+  uploaded: boolean;
+  filename?: string;
+  file_path?: string;
+  uploaded_at?: string;
+}
+
+export interface Shipment {
+  id: string;
+  batch_id: string;
+  quotation_no?: string;
+  buyer_name: string;
+  product_name: string;
+  created_at: string;
+  updated_at: string;
+  all_uploaded: boolean;
+  docs: Record<string, ShipmentDocSlot>;
 }
 
