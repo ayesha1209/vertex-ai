@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { DashboardLayout } from "../components/layout/DashboardLayout";
 import { DocumentTable } from "../components/documents/DocumentTable";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
+import { SendEmailModal } from "../components/SendEmailModal";
 import { listDocuments, deleteDocument } from "../lib/api";
 import type { DocumentSummary } from "../lib/types";
 
@@ -16,6 +17,7 @@ export function BatchDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showSendEmail, setShowSendEmail] = useState(false);
 
   const fetchBatch = useCallback(async () => {
     if (!batchId) return;
@@ -118,6 +120,27 @@ export function BatchDetailPage() {
               </svg>
               Invoices
             </Link>
+            <button
+              type="button"
+              onClick={() => setShowSendEmail(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-100 focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
+            >
+              <svg
+                className="h-4 w-4 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                />
+              </svg>
+              Send Email
+            </button>
           </div>
         </div>
 
@@ -154,6 +177,15 @@ export function BatchDetailPage() {
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteId(null)}
         />
+
+        {showSendEmail && batchId && (
+          <SendEmailModal
+            batchId={batchId}
+            onClose={() => setShowSendEmail(false)}
+            buyerName={firstDoc?.buyer_name}
+            productName={firstDoc?.product_name}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

@@ -219,8 +219,8 @@ EXPORT_PRINT_CSS = """
   }
   .terms-section p {
     font-size: 10px !important;
-    margin: 2px 0 !important;
-    line-height: 1.3 !important;
+    margin: 1px 0 !important;
+    line-height: 1.2 !important;
   }
   /* ── Items table ── */
   .items-table {

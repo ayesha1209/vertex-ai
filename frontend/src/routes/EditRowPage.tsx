@@ -10,14 +10,16 @@ import type { RowPreview } from "../lib/types";
 function Field({
   label,
   hint,
+  className,
   children,
 }: {
   label: string;
   hint?: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
+    <label className={`flex flex-col gap-1.5${className ? ` ${className}` : ""}`}>
       <span className="text-xs font-semibold text-slate-700">{label}</span>
       {children}
       {hint && <span className="text-[11px] text-slate-400">{hint}</span>}

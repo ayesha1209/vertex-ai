@@ -422,6 +422,37 @@ def _normalize_quotation_spacing(html: str) -> str:
     return html
 
 
+def _ensure_signatory_block_no_split(html: str) -> str:
+    """Ensure the signatory-block (stamp image + AUTHORIZED SIGNATORY + Date) can never
+    be split mid-block across a page break.
+
+    xhtml2pdf does not reliably honor page-break-inside:avoid on a plain <div> — only on
+    <table> (mapped to a KeepTogether-wrapped reportlab Table). Documents generated before
+    this was known still store a bare standalone signatory-block div, so at export time we
+    re-wrap it in a single-cell table (the same mechanism already used for the terms-sig-table
+    split case, which reliably stays together). A signatory-block already inside a <td> (the
+    split case) is left alone — it's already reliably kept together."""
+    def _fix(m: re.Match) -> str:
+        inner = m.group(1)
+        preceding = html[max(0, m.start() - 150) : m.start()]
+        if "<td" in preceding:
+            return m.group(0)  # already inside a table cell
+        return (
+            '<table class="terms-sig-table" style="width:100%;border:none !important;'
+            "border-collapse:collapse;margin:0;page-break-inside:avoid !important;\">"
+            '<tr style="border:none !important;vertical-align:top;">'
+            '<td style="border:none !important;padding:0;text-align:right;vertical-align:top;">'
+            f'<div class="signatory-block" style="text-align:right;margin-top:0;">{inner}</div>'
+            "</td></tr></table>"
+        )
+    return re.sub(
+        r'<div class="[^"]*\bsignatory-block\b[^"]*"[^>]*>(.*?)</div>',
+        _fix,
+        html,
+        flags=re.DOTALL,
+    )
+
+
 def _force_terms_sig_borders_off(html: str) -> str:
     """Force border:none on the terms/signatory table (13-15 + AUTHORIZED SIGNATORY).
     Uses multiple strategies to find the table; strips ALL border properties and injects border:none !important.
@@ -561,6 +592,7 @@ def _prepare_body_for_export(html: str) -> str:
     body = _normalize_body(body)
     body = _normalize_quotation_spacing(body)
     body = _force_terms_sig_borders_off(body)
+    body = _ensure_signatory_block_no_split(body)
     return body
 
 
@@ -828,8 +860,13 @@ def wrap_html_for_export(
         left: 50pt; width: 495pt; top: 30pt; height: 60pt;
     }}
     @frame content_frame {{
-        left: 50pt; width: 495pt; top: 100pt; height: 680pt;
+        left: 50pt; width: 495pt; top: 100pt; height: 675pt;
     }}
+    /* 15pt gap (was 10pt) between content_frame's bottom (775pt) and here — a modest
+       safety margin against an unbreakable block barely overflowing into the footer
+       band, without sacrificing much usable page height (the real overflow risk is
+       already fixed at the source: the terms-sig-wrapper is no longer one giant
+       unbreakable block, see response_parser.py). */
     @frame footer_frame {{
         -pdf-frame-content: footer_content;
         left: 50pt; width: 495pt; top: 790pt; height: 45pt;

@@ -501,7 +501,12 @@ def _render_terms_block(
         terms_upper = terms_lines[:split_idx] if split_idx is not None else terms_lines
         terms_lower = terms_lines[split_idx:] if split_idx is not None else []
 
-    html_lines.append('<div class="terms-sig-wrapper" style="page-break-before:avoid !important; page-break-inside:avoid !important; margin-top:0; padding-top:0;">')
+    # No page-break-inside:avoid here — the wrapper holds the ENTIRE terms list plus
+    # the signature table, and marking that whole (unbounded-length) block unbreakable
+    # pushed it to a fresh, mostly-blank page and could overflow past the xhtml2pdf
+    # content frame. Only the small terms-sig-table/signatory-block tail needs to stay
+    # together; the terms text itself paginates fine like any other paragraph flow.
+    html_lines.append('<div class="terms-sig-wrapper" style="page-break-before:avoid !important; margin-top:0; padding-top:0;">')
     html_lines.append('<div class="terms-section terms-upper" style="width:100%; page-break-after:avoid !important;">')
     for ln in terms_upper:
         if ln.startswith("TERMS"):
@@ -516,7 +521,7 @@ def _render_terms_block(
         for ln in terms_lower:
             html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
         html_lines.append("</div></td>")
-        html_lines.append('<td style="width:40%; border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0; page-break-before:avoid !important;">')
+        html_lines.append('<td style="width:40%; border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0; page-break-before:avoid !important; page-break-inside:avoid !important;">')
         _render_signature_lines(html_lines, signature_lines)
         html_lines.append("</div></td></tr></table>")
     elif terms_lower:
@@ -525,9 +530,14 @@ def _render_terms_block(
             html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
         html_lines.append("</div>")
     elif signature_lines:
-        html_lines.append('<div class="signatory-block" style="text-align:right; margin-top:4px; page-break-before:avoid !important;">')
+        # A plain div isn't reliably kept together by xhtml2pdf's page-break-inside;
+        # a single-cell table is (same mechanism as the terms-sig-table split case
+        # above), so the stamp/heading/date can't be split across a page break.
+        html_lines.append('<table class="terms-sig-table" style="width:100%; border:none !important; border-collapse:collapse; margin:0; margin-top:4px; page-break-inside:avoid !important;">')
+        html_lines.append('<tr style="border:none !important; vertical-align:top;">')
+        html_lines.append('<td style="border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0;">')
         _render_signature_lines(html_lines, signature_lines)
-        html_lines.append("</div>")
+        html_lines.append("</div></td></tr></table>")
     html_lines.append("</div>")
     return i
 
@@ -640,7 +650,12 @@ def text_to_html(
                             break
                     terms_upper = terms_lines[:split_idx] if split_idx is not None else terms_lines
                     terms_lower = terms_lines[split_idx:] if split_idx is not None else []
-                html_lines.append('<div class="terms-sig-wrapper" style="page-break-before:avoid !important; page-break-inside:avoid !important; margin-top:0; padding-top:0;">')
+                # No page-break-inside:avoid here — the wrapper holds the ENTIRE terms list plus
+                # the signature table, and marking that whole (unbounded-length) block unbreakable
+                # pushed it to a fresh, mostly-blank page and could overflow past the xhtml2pdf
+                # content frame. Only the small terms-sig-table/signatory-block tail needs to stay
+                # together; the terms text itself paginates fine like any other paragraph flow.
+                html_lines.append('<div class="terms-sig-wrapper" style="page-break-before:avoid !important; margin-top:0; padding-top:0;">')
                 html_lines.append('<div class="terms-section terms-upper" style="width:100%; page-break-after:avoid !important;">')
                 for ln in terms_upper:
                     if ln.startswith("TERMS"):
@@ -656,7 +671,7 @@ def text_to_html(
                     for ln in terms_lower:
                         html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
                     html_lines.append("</div></td>")
-                    html_lines.append('<td style="width:40%; border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0; page-break-before:avoid !important;">')
+                    html_lines.append('<td style="width:40%; border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0; page-break-before:avoid !important; page-break-inside:avoid !important;">')
                     _render_signature_lines(html_lines, signature_lines)
                     html_lines.append("</div></td></tr></table>")
                 elif terms_lower:
@@ -665,9 +680,15 @@ def text_to_html(
                         html_lines.append(f"<p style=\"margin:2px 0; display:block;\">{escape(ln)}</p>")
                     html_lines.append("</div>")
                 elif signature_lines:
-                    html_lines.append('<div class="signatory-block" style="text-align:right; margin-top:4px; page-break-before:avoid !important;">')
+                    # A plain div isn't reliably kept together by xhtml2pdf's
+                    # page-break-inside; a single-cell table is (same mechanism as
+                    # the terms-sig-table split case above), so the stamp/heading/
+                    # date can't be split across a page break.
+                    html_lines.append('<table class="terms-sig-table" style="width:100%; border:none !important; border-collapse:collapse; margin:0; margin-top:4px; page-break-inside:avoid !important;">')
+                    html_lines.append('<tr style="border:none !important; vertical-align:top;">')
+                    html_lines.append('<td style="border:none !important; padding:0; text-align:right; vertical-align:top;"><div class="signatory-block" style="text-align:right; margin-top:0;">')
                     _render_signature_lines(html_lines, signature_lines)
-                    html_lines.append("</div>")
+                    html_lines.append("</div></td></tr></table>")
                 html_lines.append("</div>")
             else:
                 i = _render_terms_block(lines, i, html_lines, multi_product)

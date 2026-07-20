@@ -79,7 +79,7 @@ export function useJobStream(
 
   useEffect(() => {
     if (!jobId) {
-      setState({ status: "done", documents: [] });
+      setState({ status: "done", documents: [], progress: EMPTY_PROGRESS });
       return;
     }
     docsRef.current = [];
@@ -161,7 +161,7 @@ export function useJobStream(
           setState({ status: "streaming", documents: docsRef.current, progress: { ...progressRef.current } });
 
         } else if (data.type === "document" && data.doc) {
-          const doc = data.doc as DocumentSummary;
+          const doc = data.doc as unknown as DocumentSummary;
           docsRef.current = [...docsRef.current, doc];
           // Increment doc count for current row
           const p = progressRef.current;

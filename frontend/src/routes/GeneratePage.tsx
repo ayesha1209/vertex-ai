@@ -405,6 +405,8 @@ export function GeneratePage() {
       <SendEmailModal
         batchId={docs[0].batch_id}
         onClose={() => setShowEmailModal(false)}
+        buyerName={docs[0].buyer_name}
+        productName={docs[0].product_name}
       />
     )}
     </>

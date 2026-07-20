@@ -5,6 +5,7 @@ import type { DocumentInDB } from "../lib/types";
 import { VertexEditor } from "../components/editor/VertexEditor";
 import { PageLayout } from "../components/ui/PageLayout";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
+import { SendEmailModal } from "../components/SendEmailModal";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -35,6 +36,7 @@ export function EditorPage() {
   const pendingSaveRef = useRef(false);
   const [discardModalOpen, setDiscardModalOpen] = useState(false);
   const [discardLoading, setDiscardLoading] = useState(false);
+  const [showSendEmail, setShowSendEmail] = useState(false);
 
   const handleDownloadPdf = () => {
     if (!doc) return;
@@ -153,6 +155,14 @@ export function EditorPage() {
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-ghost" onClick={handleBack}>← Back</button>
           <button type="button" className="btn-outline" disabled={!doc} onClick={handleDownloadPdf}>PDF</button>
+          <button
+            type="button"
+            className="btn-outline"
+            disabled={!doc?.batch_id}
+            onClick={() => setShowSendEmail(true)}
+          >
+            Send Email
+          </button>
           <button type="button" className="btn-primary" onClick={handleSave} disabled={saving || !doc}>{saving ? "Saving…" : "Save"}</button>
         </div>
       }
@@ -164,6 +174,16 @@ export function EditorPage() {
         <div className="card-elevated overflow-hidden p-4 sm:p-6">
           <VertexEditor initialHtml={doc.html_content} onChange={(html) => setCurrentHtml(html)} />
         </div>
+      )}
+
+      {showSendEmail && doc?.batch_id && (
+        <SendEmailModal
+          batchId={doc.batch_id}
+          onClose={() => setShowSendEmail(false)}
+          buyerName={doc.buyer_name}
+          productName={doc.product_name}
+          defaultDocTypes={[doc.doc_type]}
+        />
       )}
 
       {/* PDF number picker modal */}

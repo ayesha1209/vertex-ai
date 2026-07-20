@@ -537,6 +537,16 @@ export async function getSenderEmails(): Promise<string[]> {
   return Array.isArray(data.senders) ? data.senders : [];
 }
 
+/** Look up the stored buyer email for a batch (from the original Excel's
+ * "Email id" column), if any of its documents have one. Returns null if none
+ * is stored, so the caller can ask the user to type one in instead. */
+export async function getBatchEmail(batchId: string): Promise<string | null> {
+  const res = await fetch(`${API_BASE_URL}/email/batch-email/${batchId}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.email ?? null;
+}
+
 export interface EmailSendResult {
   email: string;
   buyer_name: string;
@@ -554,6 +564,9 @@ export async function sendBatchEmails(payload: {
   batch_id: string;
   sender_email: string;
   doc_types: string[];
+  subject?: string;
+  recipient_email?: string;
+  message?: string;
 }): Promise<SendBatchEmailsResponse> {
   let res: Response;
   try {
