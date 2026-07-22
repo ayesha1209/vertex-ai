@@ -546,9 +546,15 @@ def assemble_separate_documents(
     multi_product = "," in (product_name or "").strip()
     q_html = text_to_html(quotation_text, compact=True, multi_product=multi_product)
     q_html = _fix_description_line_breaks(q_html)
-    # Always ensure the QUOTATION heading is present (AI sometimes includes it, sometimes not)
-    if not re.search(r"<h1[^>]*>\s*QUOTATION\s*</h1>", q_html, re.IGNORECASE):
-        q_heading = '<h1 style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;">QUOTATION</h1>'
+    # Always ensure exactly one QUOTATION heading is present. The AI sometimes includes its
+    # own leading <h1> (occasionally with markdown/formatting quirks that don't match a strict
+    # "QUOTATION"-only regex, e.g. "**QUOTATION**") — replace any leading heading rather than
+    # just conditionally prepending, so a near-miss can never result in two headings.
+    q_heading = '<h1 style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;">QUOTATION</h1>'
+    leading_heading = re.match(r"\s*<h1[^>]*>.*?</h1>", q_html, re.IGNORECASE | re.DOTALL)
+    if leading_heading:
+        q_html = q_heading + q_html[leading_heading.end():]
+    else:
         q_html = q_heading + q_html
     q_html = QUOTATION_WRAPPER + q_html + QUOTATION_WRAPPER_END
     q_html = _force_bank_details(q_html, product_type=product_type)

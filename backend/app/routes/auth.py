@@ -15,28 +15,35 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/api/auth/login")
-async def login(payload: LoginRequest, response: Response) -> dict:
+async def login(payload: LoginRequest, request: Request, response: Response) -> dict:
     """Verify password and set a session cookie."""
     if not payload.password or not payload.password.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password required")
     if not verify_password(payload.password.strip()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+    # Cross-site (Vercel frontend -> Render backend) requires SameSite=None + Secure, which in
+    # turn requires HTTPS. Locally the request scheme is http, so fall back to Lax/insecure so
+    # login still works over plain http://localhost.
+    is_https = request.url.scheme == "https"
     response.set_cookie(
         key=COOKIE_NAME,
         value=_session_value(),
         max_age=_COOKIE_MAX_AGE,
         httponly=True,
-        samesite="lax",
-        secure=False,   # internal tool — no HTTPS required
+        samesite="none" if is_https else "lax",
+        secure=is_https,
         path="/",
     )
     return {"ok": True}
 
 
 @router.post("/api/auth/logout")
-async def logout(response: Response) -> dict:
+async def logout(request: Request, response: Response) -> dict:
     """Clear the session cookie."""
-    response.delete_cookie(key=COOKIE_NAME, path="/")
+    is_https = request.url.scheme == "https"
+    response.delete_cookie(
+        key=COOKIE_NAME, path="/", samesite="none" if is_https else "lax", secure=is_https
+    )
     return {"ok": True}
 
 

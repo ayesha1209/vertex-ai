@@ -1198,6 +1198,9 @@ def _pdf_weasyprint(html: str) -> Optional[bytes]:
         HTML(string=html).write_pdf(out)
         return out.getvalue()
     except Exception:
+        # Falling back to xhtml2pdf changes layout (table overflow, page-break-inside on
+        # divs, header/footer mechanism) — log so a silent engine swap is visible in prod.
+        logger.exception("WeasyPrint PDF generation failed; falling back to xhtml2pdf")
         return None
 
 
