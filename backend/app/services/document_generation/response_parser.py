@@ -226,13 +226,20 @@ def _flush_quotation_table(
     else:
         label_cols = set()
 
-    # Add class for each table type to apply CSS styles
+    items_ncols = 5
+    if table_type == _Q_TABLE_ITEMS and table_rows:
+        items_ncols = max(5, len(table_rows[0].split("|")))
+
+    # Add class for each table type to apply CSS styles. The 6-column items table (Sr/Desc/
+    # Part/Qty/Price/Amount) gets its own modifier class — print_css.py's plain .items-table
+    # nth-child width rules are tuned for the 5-column layout and would force the first 5
+    # columns to 100% width, pushing the 6th (Amount) column outside the table entirely.
     if table_type == _Q_TABLE_CUSTOMER:
         table_class = ' class="customer-table"'
     elif table_type == _Q_TABLE_DELIVERY:
         table_class = ' class="delivery-table"'
     elif table_type == _Q_TABLE_ITEMS:
-        table_class = ' class="items-table"'
+        table_class = ' class="items-table items-table-6col"' if items_ncols >= 6 else ' class="items-table"'
     elif table_type == _Q_TABLE_TOTALS:
         table_class = ' class="totals-table"'
     elif table_type == _Q_TABLE_WEIGHT_PACKING:
@@ -241,16 +248,12 @@ def _flush_quotation_table(
         table_class = ''
     html_lines.append(f'<table{table_class} style="{_Q_TABLE}">')
 
-    items_ncols = 5
-    if table_type == _Q_TABLE_ITEMS and table_rows:
-        items_ncols = max(5, len(table_rows[0].split("|")))
-
     # Add colgroup for items table to control column widths (5 columns = chemical style; 6 = Sr/Desc/Part/Qty/Price/Amount)
     if table_type == _Q_TABLE_ITEMS:
         if items_ncols >= 6:
             html_lines.append(
-                '<colgroup><col style="width:5%"/><col style="width:32%"/><col style="width:13%"/>'
-                '<col style="width:10%"/><col style="width:15%"/><col style="width:15%"/></colgroup>'
+                '<colgroup><col style="width:6%"/><col style="width:35%"/><col style="width:14%"/>'
+                '<col style="width:11%"/><col style="width:17%"/><col style="width:17%"/></colgroup>'
             )
         else:
             html_lines.append(
@@ -368,7 +371,7 @@ def _flush_quotation_table(
                 else:
                     # Items table header: gray background, bold, with column widths
                     col_widths = (
-                        ["5%", "32%", "13%", "10%", "15%", "15%"]
+                        ["6%", "35%", "14%", "11%", "17%", "17%"]
                         if items_ncols >= 6
                         else ["6%", "40%", "14%", "20%", "20%"]
                     )

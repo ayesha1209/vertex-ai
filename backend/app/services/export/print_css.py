@@ -250,6 +250,39 @@ EXPORT_PRINT_CSS = """
     width: 20% !important;
     text-align: right !important;
   }
+  /* 6-column items table (Sr/Desc/Part/Qty/Price/Amount) — the compound class selector
+     below is more specific than the plain .items-table rules above, so it wins for the
+     6-column variant regardless of source order; widths sum to 100% on their own instead
+     of relying on the 5-column values. Avoids :not() for xhtml2pdf-fallback compatibility. */
+  .items-table.items-table-6col td:nth-child(1),
+  .items-table.items-table-6col th:nth-child(1) {
+    width: 6% !important;
+    white-space: nowrap !important;
+  }
+  .items-table.items-table-6col td:nth-child(2),
+  .items-table.items-table-6col th:nth-child(2) {
+    width: 35% !important;
+  }
+  .items-table.items-table-6col td:nth-child(3),
+  .items-table.items-table-6col th:nth-child(3) {
+    width: 14% !important;
+    text-align: right !important;
+  }
+  .items-table.items-table-6col td:nth-child(4),
+  .items-table.items-table-6col th:nth-child(4) {
+    width: 11% !important;
+    text-align: right !important;
+  }
+  .items-table.items-table-6col td:nth-child(5),
+  .items-table.items-table-6col th:nth-child(5) {
+    width: 17% !important;
+    text-align: right !important;
+  }
+  .items-table.items-table-6col td:nth-child(6),
+  .items-table.items-table-6col th:nth-child(6) {
+    width: 17% !important;
+    text-align: right !important;
+  }
   .items-table tr:first-child td,
   .items-table thead td,
   .items-table thead th {

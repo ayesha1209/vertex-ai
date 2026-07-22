@@ -180,7 +180,8 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
             )
             full_text = complete(SYSTEM_PROMPT_ENGINEERING, quotation_only_prompt, temperature=0.3)
             try:
-                quotation_text, _, _, _ = split_four_sections("# QUOTATION\n" + full_text)
+                wrapped = full_text if full_text.strip().upper().startswith("# QUOTATION") else "# QUOTATION\n" + full_text
+                quotation_text, _, _, _ = split_four_sections(wrapped)
                 if not quotation_text.strip():
                     quotation_text = full_text
             except Exception:
@@ -204,7 +205,8 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
         )
         full_text = complete(SYSTEM_PROMPT, quotation_only_prompt, temperature=0.3)
         try:
-            quotation_text, _, _, _ = split_four_sections("# QUOTATION\n" + full_text)
+            wrapped = full_text if full_text.strip().upper().startswith("# QUOTATION") else "# QUOTATION\n" + full_text
+            quotation_text, _, _, _ = split_four_sections(wrapped)
             if not quotation_text.strip():
                 quotation_text = full_text
         except Exception:

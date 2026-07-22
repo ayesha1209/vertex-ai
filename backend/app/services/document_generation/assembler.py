@@ -548,14 +548,20 @@ def assemble_separate_documents(
     q_html = _fix_description_line_breaks(q_html)
     # Always ensure exactly one QUOTATION heading is present. The AI sometimes includes its
     # own leading <h1> (occasionally with markdown/formatting quirks that don't match a strict
-    # "QUOTATION"-only regex, e.g. "**QUOTATION**") — replace any leading heading rather than
-    # just conditionally prepending, so a near-miss can never result in two headings.
+    # "QUOTATION"-only regex, e.g. "**QUOTATION**"), and multi-product generation can leave a
+    # stray marker line so TWO leading <h1> blocks stack up — strip ALL leading headings (and
+    # any blank-paragraph filler between them) rather than just the first, so a near-miss or a
+    # stacked duplicate can never survive as two headings.
     q_heading = '<h1 style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;">QUOTATION</h1>'
-    leading_heading = re.match(r"\s*<h1[^>]*>.*?</h1>", q_html, re.IGNORECASE | re.DOTALL)
-    if leading_heading:
-        q_html = q_heading + q_html[leading_heading.end():]
-    else:
-        q_html = q_heading + q_html
+    while True:
+        leading_heading = re.match(
+            r"\s*(?:<h1[^>]*>.*?</h1>|<p[^>]*>\s*(?:<br\s*/?>|&nbsp;)?\s*</p>)",
+            q_html, re.IGNORECASE | re.DOTALL,
+        )
+        if not leading_heading:
+            break
+        q_html = q_html[leading_heading.end():]
+    q_html = q_heading + q_html
     q_html = QUOTATION_WRAPPER + q_html + QUOTATION_WRAPPER_END
     q_html = _force_bank_details(q_html, product_type=product_type)
     q_html = _apply_make_in_quotation_items(

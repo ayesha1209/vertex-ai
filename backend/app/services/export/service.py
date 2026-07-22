@@ -596,8 +596,6 @@ def _prepare_body_for_export(html: str) -> str:
     return body
 
 
-# Items table currency columns: Unit Price=index 3, Unit Amount=index 4 (0-based)
-_ITEMS_CURRENCY_COLS = {3, 4}
 # A bare number in a table cell (with optional commas/decimals)
 _BARE_NUM_RE = re.compile(r"^\d[\d,]*(?:\.\d{1,2})?$")
 
@@ -614,7 +612,11 @@ def _prefix_bare_number_in_cell(cell_inner: str, prefix: str) -> str:
 
 
 def _apply_currency_to_items_table(table_html: str, prefix: str) -> str:
-    """Apply currency prefix ONLY to Unit Price (col 3) and Unit Amount (col 4) in each data row."""
+    """Apply currency prefix to the Unit Price and Amount columns in each data row.
+    These are always the last two columns, whether the row has 5 columns (chemical style:
+    No/Description/Quantity/Unit Price/Unit Amount) or 6 (engineering style: Sr/Description/
+    Part/Qty/Unit Price/Amount) — using the last two by position instead of hardcoded
+    absolute indices keeps this correct regardless of how many columns the AI produced."""
     result: list[str] = []
     pos = 0
     for row_m in re.finditer(r"(<tr[^>]*>)(.*?)(</tr>)", table_html, re.DOTALL | re.IGNORECASE):
@@ -627,13 +629,13 @@ def _apply_currency_to_items_table(table_html: str, prefix: str) -> str:
             continue
         # Find all td cells in this row
         td_list = list(re.finditer(r"(<td[^>]*>)(.*?)(</td>)", row_body, re.DOTALL | re.IGNORECASE))
-        if not td_list:
+        if len(td_list) < 2:
             result.append(row_m.group(0))
             continue
         # Build new row_body applying currency only at target indices
         new_body = row_body
         # Process in reverse so earlier positions stay valid
-        for col_idx in sorted(_ITEMS_CURRENCY_COLS, reverse=True):
+        for col_idx in sorted({len(td_list) - 2, len(td_list) - 1}, reverse=True):
             if col_idx >= len(td_list):
                 continue
             td_m = td_list[col_idx]
