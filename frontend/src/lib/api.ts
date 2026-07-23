@@ -602,6 +602,17 @@ export async function adminLogin(password: string): Promise<void> {
   }
 }
 
+export async function checkAuth(): Promise<boolean> {
+  const res = await fetch(`${API_BASE_URL}/auth/check`, { credentials: "include" });
+  if (!res.ok) return false;
+  const data = await res.json().catch(() => null);
+  return data?.authenticated === true;
+}
+
+export async function adminLogout(): Promise<void> {
+  await fetch(`${API_BASE_URL}/auth/logout`, { method: "POST", credentials: "include" });
+}
+
 // ---------------------------------------------------------------------------
 // Admin shipment tracking API (cookies sent automatically)
 // ---------------------------------------------------------------------------

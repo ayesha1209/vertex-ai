@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { checkAuth, adminLogout } from "../lib/api";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -20,9 +21,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // On mount, ask the backend if we have a valid session cookie
   useEffect(() => {
-    fetch("/api/auth/check", { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setIsAuthenticated(data.authenticated === true))
+    checkAuth()
+      .then(setIsAuthenticated)
       .catch(() => setIsAuthenticated(false))
       .finally(() => setChecking(false));
   }, []);
@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(() => setIsAuthenticated(true), []);
 
   const logout = useCallback(() => {
-    fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
+    adminLogout().catch(() => {});
     setIsAuthenticated(false);
   }, []);
 
