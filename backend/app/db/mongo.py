@@ -14,6 +14,7 @@ documents_collection = db["documents"]
 manual_documents_collection = db["manual_documents"]
 terms_collection = db["terms_and_conditions"]
 shipment_tracking_collection = db["shipment_tracking"]
+jobs_collection = db["jobs"]
 # Single document id for terms (chemical + engineering HTML)
 TERMS_DOC_ID = "default"
 

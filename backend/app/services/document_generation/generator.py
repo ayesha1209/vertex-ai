@@ -11,6 +11,8 @@ TDS/COA/MSDS for each individual product in its own separate call.
 This keeps each call within the model's output-token budget.
 """
 
+import logging
+import re
 import uuid
 
 from app.prompts.engineering_prompts import (
@@ -38,9 +40,23 @@ from app.services.document_generation.response_parser import (
 )
 from app.services.terms_service import get_terms
 
+logger = logging.getLogger(__name__)
+
 # Products are considered "multi-product" when the product_name field
 # contains a comma — the same threshold already used by the assembler.
 _MULTI_PRODUCT_THRESHOLD = 2
+
+# Matches a leading "# QUOTATION", "## QUOTATION", "#QUOTATION" (no space) etc. —
+# tolerant of heading-level/spacing variance so we don't stack a second marker
+# line in front of one the AI already wrote in a slightly different form.
+_QUOTATION_MARKER_RE = re.compile(r"^\s*#+\s*QUOTATION\b", re.IGNORECASE)
+_TECHNICAL_MARKER_RE = re.compile(r"^\s*#+\s*TECHNICAL\b", re.IGNORECASE)
+
+
+def _ensure_marker(text: str, marker_re: re.Pattern, marker_line: str) -> str:
+    """Prepend marker_line only if text doesn't already start with a matching marker
+    (tolerant of "#"/"##"/no-space variants), so a near-miss can't stack a duplicate."""
+    return text if marker_re.match(text.strip()) else f"{marker_line}\n{text}"
 
 
 def _split_products(product_name: str) -> list[str]:
@@ -111,6 +127,7 @@ def _generate_tech_docs_for_product(
     try:
         _, tds_text, coa_text, msds_text = split_four_sections(wrapped)
     except Exception:
+        logger.exception("split_four_sections failed for chemical per-product tech docs")
         tds_text = coa_text = msds_text = ""
 
     return tds_text, coa_text, msds_text
@@ -134,11 +151,12 @@ def _generate_engineering_tds_for_product(single_product: str, row: RowPreview) 
     )
     sys_prompt = SYSTEM_PROMPT_ENGINEERING_TDS_ONLY.format(product_name=single_product)
     full_text = complete(sys_prompt, prompt, temperature=0.3)
-    # Response should start with # TECHNICAL DATA SHEET — ensure marker present
-    ft = full_text.strip()
-    if not ft.upper().startswith("# TECHNICAL"):
-        ft = f"# TECHNICAL DESCRIPTION - {single_product}\n\n{ft}"
-    return ft
+    # Response should start with a TECHNICAL marker — ensure one is present. Tolerant of
+    # "#"/"##"/no-space variants so a near-miss can't stack a second marker line in front
+    # of the AI's own heading (which caused a duplicate near-empty TDS doc per product).
+    return _ensure_marker(
+        full_text.strip(), _TECHNICAL_MARKER_RE, f"# TECHNICAL DESCRIPTION - {single_product}"
+    )
 
 
 def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
@@ -180,11 +198,12 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
             )
             full_text = complete(SYSTEM_PROMPT_ENGINEERING, quotation_only_prompt, temperature=0.3)
             try:
-                wrapped = full_text if full_text.strip().upper().startswith("# QUOTATION") else "# QUOTATION\n" + full_text
+                wrapped = _ensure_marker(full_text.strip(), _QUOTATION_MARKER_RE, "# QUOTATION")
                 quotation_text, _, _, _ = split_four_sections(wrapped)
                 if not quotation_text.strip():
                     quotation_text = full_text
             except Exception:
+                logger.exception("split_four_sections failed for engineering multi-product quotation")
                 quotation_text = full_text
             tds_combined = ""
             coa_combined = ""
@@ -194,6 +213,7 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
             try:
                 quotation_text, tds_combined, coa_combined, msds_combined = split_four_sections(full_text)
             except Exception:
+                logger.exception("split_four_sections failed for engineering single-product document")
                 quotation_text = full_text
                 tds_combined = coa_combined = msds_combined = ""
     elif is_multi:
@@ -205,11 +225,12 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
         )
         full_text = complete(SYSTEM_PROMPT, quotation_only_prompt, temperature=0.3)
         try:
-            wrapped = full_text if full_text.strip().upper().startswith("# QUOTATION") else "# QUOTATION\n" + full_text
+            wrapped = _ensure_marker(full_text.strip(), _QUOTATION_MARKER_RE, "# QUOTATION")
             quotation_text, _, _, _ = split_four_sections(wrapped)
             if not quotation_text.strip():
                 quotation_text = full_text
         except Exception:
+            logger.exception("split_four_sections failed for chemical multi-product quotation")
             quotation_text = full_text
         tds_combined = ""
         coa_combined = ""
@@ -220,6 +241,7 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
         try:
             quotation_text, tds_combined, coa_combined, msds_combined = split_four_sections(full_text)
         except Exception:
+            logger.exception("split_four_sections failed for chemical single-product document; falling back to marker-scan")
             idx = full_text.find(MARKER_COA)
             if idx >= 0:
                 quotation_text = full_text[:idx].strip()
@@ -298,6 +320,7 @@ def generate_documents_for_row(row: RowPreview) -> list[DocumentCreate]:
             else:
                 p_tds, p_coa, p_msds = _generate_tech_docs_for_product(single_product, row)
         except Exception:
+            logger.exception("Tech-doc generation failed for product %r in batch %s; emitting placeholder", single_product, batch_id)
             p_tds = p_coa = p_msds = ""
 
         per_product_docs = assemble_separate_documents(

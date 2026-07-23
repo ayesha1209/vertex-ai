@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import time
 import uuid
 from datetime import datetime as dt, timedelta
@@ -11,7 +12,9 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from pymongo.errors import PyMongoError
 
-from app.db.mongo import TERMS_DOC_ID, documents_collection, manual_documents_collection, now_local, terms_collection, to_object_id
+from app.db.mongo import TERMS_DOC_ID, documents_collection, jobs_collection, manual_documents_collection, now_local, terms_collection, to_object_id
+
+logger = logging.getLogger(__name__)
 from app.schemas.document import (
     BatchSummary,
     BulkDeleteRequest,
@@ -78,6 +81,45 @@ _worker_shutdown = asyncio.Event()
 # Max jobs in store (queued + running + recently done). Prevents unbounded memory.
 _JOB_STORE_MAX_SIZE = 50
 
+# ---------------------------------------------------------------------------
+# Durable job status in MongoDB, alongside the in-memory store above.
+#
+# The in-memory store remains the fast path for the live SSE event stream (which is
+# inherently tied to this one process's Queue) — this durable layer exists so that
+# status/cancel/stream requests that land on a process that DIDN'T create the job
+# (this process restarted, or a different instance handled the request) get an honest
+# "interrupted" answer instead of a bare, unexplained 404 or a job that looks stuck
+# "running" forever. It does not resume in-flight generation after a restart — the
+# rows already inserted into `documents_collection` before a crash are not lost, but
+# any row not yet started when the process died still needs to be resubmitted.
+# ---------------------------------------------------------------------------
+
+
+def _job_persist(job_id: str, **fields: Any) -> None:
+    """Best-effort durable status write. Never raises — a Mongo hiccup shouldn't break
+    the in-memory-tracked generation flow, which remains authoritative for this process."""
+    try:
+        jobs_collection.update_one(
+            {"_id": job_id},
+            {"$set": {**fields, "updated_at": now_local()}, "$setOnInsert": {"created_at": now_local()}},
+            upsert=True,
+        )
+    except Exception:
+        logger.exception("Failed to persist job status for %s (fields=%r)", job_id, fields)
+
+
+def _reconcile_orphaned_jobs() -> None:
+    """On worker startup, mark any job left "queued"/"running" in Mongo from a previous
+    process lifetime as "interrupted" — a crash/restart mid-batch otherwise leaves it
+    looking permanently "running" to anyone who queries status later."""
+    try:
+        jobs_collection.update_many(
+            {"status": {"$in": ["queued", "running"]}},
+            {"$set": {"status": "interrupted", "updated_at": now_local()}},
+        )
+    except Exception:
+        logger.exception("Failed to reconcile orphaned jobs on startup")
+
 # Max upload file size: 5 MB
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 # Max rows per upload preview and per batch to avoid OOM
@@ -136,6 +178,7 @@ async def _batch_worker() -> None:
         if not store or store.get("status") != "queued":
             continue
         store["status"] = "running"
+        _job_persist(job_id, status="running")
         started_ev = store.get("started")
         if started_ev is not None:
             started_ev.set()
@@ -146,6 +189,7 @@ async def _batch_worker() -> None:
                 pass
             store["status"] = "done"
             store["finished_at"] = time.monotonic()
+            _job_persist(job_id, status="done", cancelled=True)
             continue
         rows_data = store.get("rows") or []
         try:
@@ -164,6 +208,7 @@ async def _batch_worker() -> None:
                 pass
             store["status"] = "done"
             store["finished_at"] = time.monotonic()
+            _job_persist(job_id, status="done")
             continue
         try:
             async with _BATCH_SEMAPHORE:
@@ -178,11 +223,13 @@ async def _batch_worker() -> None:
         finally:
             store["status"] = "done"
             store["finished_at"] = time.monotonic()
+            _job_persist(job_id, status="done")
 
 
 def start_batch_workers() -> None:
     """Start 2 background workers that process the batch queue. Call from app lifespan."""
     _worker_shutdown.clear()
+    _reconcile_orphaned_jobs()
     for _ in range(2):
         t = asyncio.create_task(_batch_worker())
         _batch_worker_tasks.append(t)
@@ -235,6 +282,15 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                 except Exception:
                     pass
                 continue
+            row_batch_id = getattr(docs_to_insert[0], "batch_id", None) if docs_to_insert else None
+            if row_batch_id:
+                # So a client that lost the live SSE stream (reconnect, or this process
+                # restarted) can still recover this row's results via the existing
+                # GET /documents?batch_id=... endpoint instead of getting nothing back.
+                try:
+                    jobs_collection.update_one({"_id": job_id}, {"$addToSet": {"batch_ids": row_batch_id}})
+                except Exception:
+                    logger.exception("Failed to record batch_id %s for job %s", row_batch_id, job_id)
             now = now_local()
             for doc in docs_to_insert:
                 mongo_doc = {
@@ -286,6 +342,7 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                         q.put_nowait(summary.model_dump(mode="json"))
                     except Exception:
                         pass
+            _job_persist(job_id, processed_count=row_idx + 1, total_rows=total_rows)
     except Exception as e:
         try:
             q.put_nowait({"error": f"Batch failed: {e}"})
@@ -294,6 +351,7 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
     finally:
         store["status"] = "done"
         store["finished_at"] = time.monotonic()
+        _job_persist(job_id, status="done", cancelled=bool(store.get("cancelled")), inserted_count=inserted_count)
         try:
             q.put_nowait("done")
         except Exception:
@@ -432,6 +490,7 @@ async def generate_batch(payload: GenerateBatchRequest) -> GenerateBatchResponse
         "finished_at": None,
         "total_rows": len(payload.rows),
     }
+    _job_persist(job_id, status="queued", total_rows=len(payload.rows), processed_count=0, cancelled=False)
 
     await _pending_batch_queue.put(job_id)
     return GenerateBatchResponse(job_id=job_id)
@@ -440,13 +499,46 @@ async def generate_batch(payload: GenerateBatchRequest) -> GenerateBatchResponse
 @router.get("/jobs/{job_id}/stream")
 async def job_stream(job_id: str) -> StreamingResponse:
     """SSE stream: events 'document' (with doc payload) and 'done'.
-    Note: Job state is in-memory per process. With multiple backend instances,
-    use sticky sessions so the same instance that created the job serves the stream.
+    Note: the live stream itself is in-memory per process. If this process doesn't own the
+    job (it restarted, or a different instance received the request), fall back to the
+    Mongo-persisted status: a job already "done" gets a synthetic 'done' event with the
+    batch_ids it produced (so the client can still fetch results via GET /documents), and
+    anything else gets an honest "interrupted" message instead of a bare, unexplained 404.
     """
     if job_id not in _job_store:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found or expired. If the server restarted or you have multiple instances, start generation again from the Preview page.",
+        try:
+            persisted = jobs_collection.find_one({"_id": job_id})
+        except Exception:
+            logger.exception("Failed to look up persisted job %s", job_id)
+            persisted = None
+        if persisted is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Job not found or expired. Start generation again from the Preview page.",
+            )
+
+        async def fallback_gen() -> Any:
+            if persisted.get("status") == "done":
+                yield f"data: {json.dumps({'type': 'done', 'batch_ids': persisted.get('batch_ids', [])})}\n\n"
+            else:
+                yield (
+                    "data: "
+                    + json.dumps({
+                        "type": "error",
+                        "message": "This job was interrupted (the server restarted mid-batch). Please start generation again.",
+                    })
+                    + "\n\n"
+                )
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        return StreamingResponse(
+            fallback_gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     store = _job_store[job_id]
@@ -506,18 +598,49 @@ async def job_stream(job_id: str) -> StreamingResponse:
 @router.post("/jobs/{job_id}/cancel")
 async def job_cancel(job_id: str) -> dict[str, Any]:
     """Mark job as cancelled. The running batch will stop after the current row; stream will receive 'done'."""
-    if job_id not in _job_store:
+    if job_id in _job_store:
+        _job_store[job_id]["cancelled"] = True
+        _job_persist(job_id, cancelled=True)
+        return {"job_id": job_id, "cancelled": True}
+    # Not owned by this process (restarted, or a different instance) — still record the
+    # cancel intent durably, even though nothing here can actually stop generation that's
+    # running elsewhere or already dead.
+    try:
+        result = jobs_collection.update_one(
+            {"_id": job_id}, {"$set": {"cancelled": True, "updated_at": now_local()}}
+        )
+    except Exception as exc:
+        logger.exception("Failed to persist cancel for job %s", job_id)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found") from exc
+    if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    _job_store[job_id]["cancelled"] = True
     return {"job_id": job_id, "cancelled": True}
 
 
 @router.get("/jobs/{job_id}/status")
 async def job_status(job_id: str) -> dict[str, Any]:
-    """Return job status (running | done). For late-joining clients."""
-    if job_id not in _job_store:
+    """Return job status (queued | running | done | interrupted). Falls back to the
+    Mongo-persisted record for late-joining clients or a process that didn't create the job."""
+    if job_id in _job_store:
+        return {"job_id": job_id, "status": _job_store[job_id]["status"]}
+    try:
+        persisted = jobs_collection.find_one({"_id": job_id})
+    except Exception:
+        logger.exception("Failed to look up persisted job %s", job_id)
+        persisted = None
+    if persisted is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    return {"job_id": job_id, "status": _job_store[job_id]["status"]}
+    status_val = persisted.get("status")
+    if status_val in ("queued", "running"):
+        # This process has no memory of it, so whichever process owned it is gone.
+        status_val = "interrupted"
+    return {
+        "job_id": job_id,
+        "status": status_val,
+        "processed_count": persisted.get("processed_count"),
+        "total_rows": persisted.get("total_rows"),
+        "batch_ids": persisted.get("batch_ids", []),
+    }
 
 
 @router.post("/generate-row", response_model=GenerateRowResponse)

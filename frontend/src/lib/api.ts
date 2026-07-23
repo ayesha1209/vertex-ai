@@ -222,12 +222,7 @@ export async function updateTerms(payload: { chemical?: string; engineering?: st
 }
 
 export function getJobStreamUrl(jobId: string): string {
-  const base = import.meta.env.VITE_API_BASE_URL;
-  if (base) {
-    const host = base.replace(/\/api\/?$/, "");
-    return `${host}/api/jobs/${jobId}/stream`;
-  }
-  return `/api/jobs/${jobId}/stream`;
+  return `${API_BASE_URL}/jobs/${jobId}/stream`;
 }
 
 /** Request backend to stop generating; in-progress row may still finish, then stream ends. */
@@ -552,6 +547,56 @@ export interface EmailSendResult {
   buyer_name: string;
   status: "sent" | "error";
   reason?: string;
+}
+
+export interface EmailPreviewRow {
+  buyer_name: string;
+  email: string;
+  product_name: string;
+  batch_id: string | null;
+  doc_count: number;
+  has_email: boolean;
+  has_docs: boolean;
+}
+
+export async function previewEmailsFromExcel(file: File): Promise<EmailPreviewRow[]> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${API_BASE_URL}/email/preview-from-excel`, { method: "POST", body: fd });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Upload failed");
+  }
+  return res.json();
+}
+
+export interface SendEmailsFromListRow {
+  buyer_name: string;
+  email: string;
+  product_name: string;
+  batch_id: string;
+  subject?: string;
+  message?: string;
+  doc_types?: string[];
+}
+
+export async function sendEmailsFromList(payload: {
+  rows: SendEmailsFromListRow[];
+  sender_email: string;
+  doc_types: string[];
+  subject?: string;
+  message?: string;
+}): Promise<SendBatchEmailsResponse> {
+  const res = await fetch(`${API_BASE_URL}/email/send-from-list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Send failed");
+  }
+  return res.json();
 }
 
 export interface SendBatchEmailsResponse {

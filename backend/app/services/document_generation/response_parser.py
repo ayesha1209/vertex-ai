@@ -199,6 +199,26 @@ def _bullet_text_after_marker(stripped: str) -> str | None:
     return None
 
 
+def _items_col_widths(n: int) -> list[str]:
+    """Percentage width for each items-table column, summing to 100%. Preserves the
+    hand-tuned 5- and 6-column layouts exactly; generalizes for any other column count
+    the AI might produce so an extra column always gets a width instead of none at all —
+    with table-layout:fixed, an unwidthed column collapses to near-zero and its text wraps
+    character-by-character (the same bug already fixed for the 6-column case)."""
+    if n <= 5:
+        return ["6%", "40%", "14%", "20%", "20%"]
+    if n == 6:
+        return ["6%", "35%", "14%", "11%", "17%", "17%"]
+    first, desc = 6, max(20, 35 - (n - 6) * 4)
+    remaining_cols = n - 2
+    base = (100 - first - desc) // remaining_cols
+    widths = [f"{first}%", f"{desc}%"] + [f"{base}%"] * remaining_cols
+    total = first + desc + base * remaining_cols
+    if total != 100:
+        widths[-1] = f"{base + (100 - total)}%"
+    return widths
+
+
 def _flush_quotation_table(
     table_rows: list[str],
     html_lines: list[str],
@@ -250,16 +270,8 @@ def _flush_quotation_table(
 
     # Add colgroup for items table to control column widths (5 columns = chemical style; 6 = Sr/Desc/Part/Qty/Price/Amount)
     if table_type == _Q_TABLE_ITEMS:
-        if items_ncols >= 6:
-            html_lines.append(
-                '<colgroup><col style="width:6%"/><col style="width:35%"/><col style="width:14%"/>'
-                '<col style="width:11%"/><col style="width:17%"/><col style="width:17%"/></colgroup>'
-            )
-        else:
-            html_lines.append(
-                '<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/>'
-                '<col style="width:20%"/><col style="width:20%"/></colgroup>'
-            )
+        cols = "".join(f'<col style="width:{w}"/>' for w in _items_col_widths(items_ncols))
+        html_lines.append(f"<colgroup>{cols}</colgroup>")
     elif table_type == _Q_TABLE_WEIGHT_PACKING:
         html_lines.append(
             '<colgroup><col style="width:18%"/><col style="width:11%"/><col style="width:11%"/>'
@@ -370,11 +382,7 @@ def _flush_quotation_table(
                     html_lines.append(f'<td bgcolor="#BBBBBB" style="{style}"><b>{cell_content}</b></td>')
                 else:
                     # Items table header: gray background, bold, with column widths
-                    col_widths = (
-                        ["6%", "35%", "14%", "11%", "17%", "17%"]
-                        if items_ncols >= 6
-                        else ["6%", "40%", "14%", "20%", "20%"]
-                    )
+                    col_widths = _items_col_widths(items_ncols)
                     width_style = f"width:{col_widths[col_idx]};" if col_idx < len(col_widths) else ""
                     nowrap = "white-space:nowrap;" if col_idx == 0 else ""
                     style = f"border:{_B};{width_style}{nowrap}text-align:left;font-weight:bold;vertical-align:top;background-color:#BBBBBB;"

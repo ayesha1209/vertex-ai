@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { PageLayout } from "../components/ui/PageLayout";
 import { EmailPreviewBox } from "../components/EmailPreviewBox";
 import { PerRowEmailModal } from "../components/PerRowEmailModal";
-import { getSenderEmails, type EmailSendResult } from "../lib/api";
+import {
+  getSenderEmails,
+  previewEmailsFromExcel,
+  sendEmailsFromList,
+  type EmailPreviewRow,
+  type EmailSendResult,
+} from "../lib/api";
 
 const DOC_TYPES = [
   { value: "quotation", label: "Quotation" },
@@ -29,15 +35,7 @@ function resolvePlaceholders(text: string, buyerName: string, productName: strin
   return text.replace(/\{product_name\}/g, productName).replace(/\{buyer_name\}/g, buyerName);
 }
 
-interface PreviewRow {
-  buyer_name: string;
-  email: string;
-  product_name: string;
-  batch_id: string | null;
-  doc_count: number;
-  has_email: boolean;
-  has_docs: boolean;
-}
+type PreviewRow = EmailPreviewRow;
 
 type Step = "upload" | "preview" | "sending" | "done";
 
@@ -66,8 +64,6 @@ export function EmailSendPage() {
   const [results, setResults] = useState<EmailSendResult[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
 
-  const API = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "/api" : "http://localhost:8000/api");
-
   useEffect(() => {
     getSenderEmails().then((s) => {
       setSenders(s);
@@ -79,14 +75,7 @@ export function EmailSendPage() {
     setUploadError(null);
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`${API}/email/preview-from-excel`, { method: "POST", body: fd });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.detail || "Upload failed");
-      }
-      const data: PreviewRow[] = await res.json();
+      const data = await previewEmailsFromExcel(file);
       setRows(data);
       // Pre-select rows that have both email and docs
       setSelected(new Set(data.map((_, i) => i).filter((i) => data[i].has_email && data[i].has_docs)));
@@ -134,22 +123,13 @@ export function EmailSendPage() {
     }));
 
     try {
-      const res = await fetch(`${API}/email/send-from-list`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rows: sendRows,
-          sender_email: sender,
-          doc_types: docTypes,
-          subject: subject.trim() || undefined,
-          message: message.trim() || undefined,
-        }),
+      const data = await sendEmailsFromList({
+        rows: sendRows,
+        sender_email: sender,
+        doc_types: docTypes,
+        subject: subject.trim() || undefined,
+        message: message.trim() || undefined,
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.detail || "Send failed");
-      }
-      const data = await res.json();
       setResults(data.results);
       setStep("done");
     } catch (e) {

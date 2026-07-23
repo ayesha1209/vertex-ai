@@ -35,6 +35,23 @@ _TITLE_STRIP_PATTERNS = [
 # "Section N:" prefix — replace with "## " so parser renders as bold, slightly larger subheading
 _SECTION_PREFIX = re.compile(r"^Section\s+\d+\s*:\s*", re.IGNORECASE)
 
+_LEADING_HEADING_RE = re.compile(
+    r"\s*(?:<h[12][^>]*>.*?</h[12]>|<p[^>]*>\s*(?:<br\s*/?>|&nbsp;)?\s*</p>)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_leading_headings(html: str) -> str:
+    """Strip ALL leading h1/h2/blank-paragraph elements (not just the first, and not just an
+    exact-text match), so a near-miss title (different wording, or rendered as h2 instead of
+    h1) or any number of stacked duplicates can never survive alongside a freshly-inserted
+    canonical heading — same fix already applied to the QUOTATION heading."""
+    while True:
+        m = _LEADING_HEADING_RE.match(html)
+        if not m:
+            return html
+        html = html[m.end():]
+
 
 def _strip_engineering_tds_commercial_lines(text: str) -> str:
     """Remove commercial/boilerplate lines sometimes echoed into engineering tech text."""
@@ -446,6 +463,25 @@ def _force_bank_details(html: str, product_type: ProductType = ProductType.chemi
     return html
 
 
+def _derive_currency_from_document(html: str) -> str | None:
+    """Read the document's own explicit 'Currency: USD/INR' field (engineering quotations
+    render this in the header block per the prompt spec) so currency enforcement trusts what
+    the AI actually wrote in the document body, instead of a possibly stale or missing
+    local_export metadata value. Returns "local"/"export", or None if the document has no
+    explicit Currency field (e.g. chemical quotations don't render one). Tolerant of inline
+    markup (e.g. <strong>/<b>/<span>) an editor might wrap the label/value in — matching only
+    on the cell's own tag, not on it being the literal next character after <td>."""
+    m = re.search(
+        r"<td[^>]*>(?:<[^>]+>)*\s*Currency\s*(?:<[^>]+>)*\s*</td>\s*"
+        r"<td[^>]*>(?:<[^>]+>)*\s*(USD|INR|Rs\.?|₹|\$)\s*(?:<[^>]+>)*\s*</td>",
+        html, re.IGNORECASE,
+    )
+    if not m:
+        return None
+    val = m.group(1).strip().upper().rstrip(".")
+    return "local" if val in ("INR", "RS", "₹") else "export"
+
+
 def _ensure_currency_in_totals(html: str, local_export: str | None) -> str:
     """Ensure quotation uses ₹ (rupee) and Rs for LOCAL, $ and USD for EXPORT in headers, items table, totals and delivery currency row."""
     if not local_export:
@@ -553,15 +589,7 @@ def assemble_separate_documents(
     # any blank-paragraph filler between them) rather than just the first, so a near-miss or a
     # stacked duplicate can never survive as two headings.
     q_heading = '<h1 style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;">QUOTATION</h1>'
-    while True:
-        leading_heading = re.match(
-            r"\s*(?:<h1[^>]*>.*?</h1>|<p[^>]*>\s*(?:<br\s*/?>|&nbsp;)?\s*</p>)",
-            q_html, re.IGNORECASE | re.DOTALL,
-        )
-        if not leading_heading:
-            break
-        q_html = q_html[leading_heading.end():]
-    q_html = q_heading + q_html
+    q_html = q_heading + _strip_leading_headings(q_html)
     q_html = QUOTATION_WRAPPER + q_html + QUOTATION_WRAPPER_END
     q_html = _force_bank_details(q_html, product_type=product_type)
     q_html = _apply_make_in_quotation_items(
@@ -569,7 +597,7 @@ def assemble_separate_documents(
     )
     if product_type == ProductType.engineering:
         q_html = _strip_engineering_quotation_brand_block(q_html)
-    q_html = _ensure_currency_in_totals(q_html, local_export)
+    q_html = _ensure_currency_in_totals(q_html, _derive_currency_from_document(q_html) or local_export)
     if quotation_no:
         q_html = _inject_quotation_no(q_html, quotation_no)
     if date:
@@ -624,22 +652,13 @@ def assemble_separate_documents(
                 f'<h1 class="engineering-tech-title" style="{_H1_STYLE}">{pname}</h1>'
                 f'<h2 class="engineering-tech-subtitle" style="font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.04em;font-size:12pt;margin:6px 0 12px 0;">TECHNICAL DATA SHEET</h2>'
             )
-            body_html = re.sub(
-                rf'<h1[^>]*>\s*{re.escape(pname)}\s*</h1>',
-                "",
-                body_html,
-                flags=re.IGNORECASE,
-                count=1,
-            )
         else:
             title = _DOC_TITLES[doc_type_key]
             heading = f'<h1 style="{_H1_STYLE}">{title}</h1>'
-            body_html = re.sub(
-                rf'<h1[^>]*>\s*{re.escape(title)}\s*</h1>',
-                "",
-                body_html,
-                flags=re.IGNORECASE,
-            )
+        # Strip ALL leading heading-like elements (not just an exact-text match on the
+        # first one) so a near-miss title, or one rendered a heading-level off, can never
+        # survive alongside the freshly-inserted canonical heading above.
+        body_html = _strip_leading_headings(body_html)
         full_html = heading + "\n" + body_html
         if is_coa:
             full_html = '<div class="coa-section">' + full_html + "</div>"

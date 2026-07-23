@@ -41,7 +41,7 @@ def _load_sig_tag() -> str:
                 f'style="height:65px; width:auto;" />'
             )
     except Exception:
-        pass
+        logger.exception("Failed to load signature image %s; PDFs will have no stamp", _SIGNATURE_IMG)
     return ""
 
 _SIG_TAG = _load_sig_tag()
@@ -49,6 +49,19 @@ _SIG_TAG = _load_sig_tag()
 
 def _is_engineering_pdf(product_type: Optional[str]) -> bool:
     return (product_type or "").strip().lower() == "engineering"
+
+
+def _derive_product_type_from_document(html: str) -> Optional[str]:
+    """When product_type metadata is missing, infer "engineering" from content signals that
+    only ever appear on engineering quotations (the 6-column items table, or a Weight &
+    Packing table) rather than silently defaulting to chemical branding/logo. Only used as a
+    fallback when product_type isn't already explicitly set — unlike currency, branding is
+    intent-driven, so explicit metadata still wins when present."""
+    if "items-table-6col" in html:
+        return "engineering"
+    if re.search(r"Weight\s*(?:&amp;|&)\s*Packing", html, re.IGNORECASE):
+        return "engineering"
+    return None
 
 
 def _engineering_header_logo_path() -> Optional[Path]:
@@ -81,6 +94,7 @@ def _get_logo_base64(path: Path) -> str:
             ext = "jpeg"
         return f"data:image/{ext};base64,{base64.b64encode(data).decode()}"
     except Exception:
+        logger.exception("Failed to load logo image %s; PDFs will have a blank logo", path)
         return ""
 
 
@@ -91,6 +105,27 @@ _TABLE_INLINE = (
     "margin: 6px 0; font-size: 11px; border: 1px solid #d0d0d0;"
 )
 _PAGE_BREAK_INLINE = "page-break-after: always;"
+
+
+def _items_col_widths(n: int) -> list[str]:
+    """Percentage width for each items-table column, summing to 100%. Preserves the
+    hand-tuned 5- and 6-column layouts exactly; generalizes for any other column count
+    the AI might produce so an extra column always gets a width instead of none at all —
+    with table-layout:fixed, an unwidthed column collapses to near-zero and its text wraps
+    character-by-character. Duplicated from response_parser.py's identical helper to avoid
+    a cross-module dependency between document_generation and export."""
+    if n <= 5:
+        return ["6%", "40%", "14%", "20%", "20%"]
+    if n == 6:
+        return ["6%", "35%", "14%", "11%", "17%", "17%"]
+    first, desc = 6, max(20, 35 - (n - 6) * 4)
+    remaining_cols = n - 2
+    base = (100 - first - desc) // remaining_cols
+    widths = [f"{first}%", f"{desc}%"] + [f"{base}%"] * remaining_cols
+    total = first + desc + base * remaining_cols
+    if total != 100:
+        widths[-1] = f"{base + (100 - total)}%"
+    return widths
 
 
 def _restore_quotation_format(html: str) -> str:
@@ -130,14 +165,8 @@ def _restore_quotation_format(html: str) -> str:
             html = html[:tag_start] + new_tag + html[tag_end:]
             tag_end += len(new_tag) - len(tag)
         if "<colgroup" not in html[tag_end : tag_end + 160]:
-            colgroup = (
-                '<colgroup><col style="width:6%"/><col style="width:35%"/><col style="width:14%"/>'
-                '<col style="width:11%"/><col style="width:17%"/><col style="width:17%"/></colgroup>'
-                if ncols >= 6
-                else '<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/>'
-                '<col style="width:20%"/><col style="width:20%"/></colgroup>'
-            )
-            html = html[:tag_end] + colgroup + html[tag_end:]
+            cols = "".join(f'<col style="width:{w}"/>' for w in _items_col_widths(ncols))
+            html = html[:tag_end] + f"<colgroup>{cols}</colgroup>" + html[tag_end:]
     # 1c) weight-packing-table: NetWeight & GrossWeight header
     for m in re.finditer(r"<table(\s[^>]*)?>", html):
         tag = m.group(0)
@@ -749,6 +778,27 @@ def _ensure_rupee_prefix_in_local(html: str) -> str:
     return html
 
 
+def _derive_currency_from_document(html: str) -> Optional[str]:
+    """Read the document's own explicit 'Currency: USD/INR' field (engineering quotations
+    render this in the header block) so export-time normalization trusts what the document
+    body actually says instead of a stale/missing local_export metadata value — the latter
+    defaulting to LOCAL when unset has previously converted correctly-priced USD quotations
+    to rupee purely because the metadata field was empty. Returns "local"/"export", or None
+    if the document has no explicit Currency field (e.g. chemical quotations don't render one).
+    Tolerant of inline markup (e.g. <strong>/<b>/<span>) an editor might wrap the label/value
+    in — matching only on the cell's own tag, not on it being the literal next character
+    after <td>."""
+    m = re.search(
+        r"<td[^>]*>(?:<[^>]+>)*\s*Currency\s*(?:<[^>]+>)*\s*</td>\s*"
+        r"<td[^>]*>(?:<[^>]+>)*\s*(USD|INR|Rs\.?|₹|\$)\s*(?:<[^>]+>)*\s*</td>",
+        html, re.IGNORECASE,
+    )
+    if not m:
+        return None
+    val = m.group(1).strip().upper().rstrip(".")
+    return "local" if val in ("INR", "RS", "₹") else "export"
+
+
 def _normalize_currency_for_export(html: str, local_export: Optional[str] = None) -> str:
     """
     Normalize currency symbols for PDF/DOCX export.
@@ -756,6 +806,7 @@ def _normalize_currency_for_export(html: str, local_export: Optional[str] = None
     - EXPORT: Any rupee symbol/HTML entity or 'Rs.' prefix → '$'; also prepend $ to amounts that have no symbol.
     If local_export is not provided, default to legacy behaviour (treat as LOCAL).
     """
+    local_export = _derive_currency_from_document(html) or local_export
     flag = (local_export or "").strip().lower()
     # Legacy/default: behave like LOCAL (₹ → Rs.)
     if not flag or flag == "local":
@@ -829,6 +880,7 @@ def wrap_html_for_export(
     letterhead: Optional[str] = None,
     prepared_body: Optional[str] = None,
     product_type: Optional[str] = None,
+    local_export: Optional[str] = None,
 ) -> str:
     """
     Wrap TipTap/editor HTML in a full document with the export print CSS.
@@ -836,13 +888,18 @@ def wrap_html_for_export(
     letterhead: "dubai" | "india" | None for chemical header/footer address and phone.
     prepared_body: if set, use this as body (already normalized + currency applied); skip _prepare_body and rupee replacement.
     product_type: "engineering" uses engineering logo and Vertex Engineering branding in PDF header when present.
+    local_export: "local" | "export" for currency normalization (Rs vs $) — same as html_to_pdf.
     """
     if prepared_body is not None:
         body_html = prepared_body
     else:
         body_html = _prepare_body_for_export(body_html)
-        # For DOCX and generic HTML export we keep legacy behaviour: treat rupee as Rs.
-        body_html = _replace_rupee_for_export(body_html)
+        # Same currency normalization as the PDF path (derives from the document's own
+        # stated Currency field first, falling back to local_export) — DOCX previously only
+        # ever converted rupee to "Rs." regardless of local_export, never applying "$".
+        body_html = _normalize_currency_for_export(body_html, local_export)
+
+    product_type = product_type or _derive_product_type_from_document(body_html)
 
     if include_header_footer:
         header_logo = _get_logo_base64(_header_logo_path(product_type))
@@ -1138,14 +1195,23 @@ def _normalize_body(html: str) -> str:
     return html
 
 
-def html_to_docx(html: str, title: str = "Document") -> bytes:
+def html_to_docx(
+    html: str,
+    title: str = "Document",
+    letterhead: Optional[str] = None,
+    local_export: Optional[str] = None,
+    product_type: Optional[str] = None,
+) -> bytes:
     """
     Generate DOCX from TipTap HTML. Preserves tables, alignment, fonts, spacing.
-    Uses html2docx (pure Python). Same HTML input as PDF for consistency.
+    Uses html2docx (pure Python). Same HTML input and currency/branding handling as the
+    PDF path (html_to_pdf) for consistency.
     """
     from html2docx import html2docx
 
-    full_html = wrap_html_for_export(html)
+    full_html = wrap_html_for_export(
+        html, letterhead=letterhead, local_export=local_export, product_type=product_type
+    )
     docx_buffer = html2docx(full_html, title=title)
     return docx_buffer.getvalue()
 
@@ -1189,6 +1255,7 @@ def html_to_pdf(
     # Inject signature AFTER currency normalization so the base64 image data
     # is never processed by the Rs→$ regex (which would corrupt the base64).
     body_html = _inject_signature_image(body_html, manual_document=manual_document)
+    product_type = product_type or _derive_product_type_from_document(body_html)
 
     full_html_weasy = _sanitize_html_for_pdf(
         _build_full_html_for_weasyprint(body_html, letterhead, product_type=product_type)
