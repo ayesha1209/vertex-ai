@@ -109,7 +109,7 @@ export function Header() {
         {/* Mobile nav */}
         <div
           id="mobile-nav"
-          className={`overflow-hidden transition-all duration-200 md:hidden ${mobileMenuOpen ? "max-h-64 opacity-100" : "max-h-0 opacity-0"}`}
+          className={`overflow-hidden transition-all duration-200 md:hidden ${mobileMenuOpen ? "max-h-[28rem] opacity-100" : "max-h-0 opacity-0"}`}
           aria-hidden={!mobileMenuOpen}
         >
           <nav className="flex flex-col gap-1 border-t border-slate-100 py-3" aria-label="Main navigation">
