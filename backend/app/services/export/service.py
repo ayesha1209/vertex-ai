@@ -115,13 +115,29 @@ def _restore_quotation_format(html: str) -> str:
                 new_tag = new_tag.rstrip() + ">"
             html = html[: m.start()] + new_tag + html[m.end() :]
             break
-    # 1b) Restore colgroup for items-table if missing (TipTap strips it)
+    # 1b) Restore items-table-6col + matching colgroup based on the table's ACTUAL column
+    # count (not assumed), since the editor can strip the class/colgroup independently of
+    # how many columns the row content actually has (e.g. an engineering-style Sr/Description/
+    # Part/Qty/Unit Price/Amount row that TipTap stripped down to plain "items-table").
     items_m = re.search(r'<table[^>]*class="[^"]*items-table[^"]*"[^>]*>', html)
     if items_m:
-        after_tag = items_m.end()
-        if "<colgroup" not in html[after_tag : after_tag + 120]:
-            colgroup = '<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/><col style="width:20%"/><col style="width:20%"/></colgroup>'
-            html = html[:after_tag] + colgroup + html[after_tag:]
+        tag_start, tag_end = items_m.start(), items_m.end()
+        tr_m = re.search(r"<tr[^>]*>(.*?)</tr>", html[tag_end:], re.DOTALL | re.IGNORECASE)
+        ncols = max(5, len(re.findall(r"<td[^>]*>", tr_m.group(1), re.IGNORECASE))) if tr_m else 5
+        tag = items_m.group(0)
+        if ncols >= 6 and "items-table-6col" not in tag:
+            new_tag = re.sub(r'class="([^"]*)"', r'class="\1 items-table-6col"', tag, count=1)
+            html = html[:tag_start] + new_tag + html[tag_end:]
+            tag_end += len(new_tag) - len(tag)
+        if "<colgroup" not in html[tag_end : tag_end + 160]:
+            colgroup = (
+                '<colgroup><col style="width:6%"/><col style="width:35%"/><col style="width:14%"/>'
+                '<col style="width:11%"/><col style="width:17%"/><col style="width:17%"/></colgroup>'
+                if ncols >= 6
+                else '<colgroup><col style="width:6%"/><col style="width:40%"/><col style="width:14%"/>'
+                '<col style="width:20%"/><col style="width:20%"/></colgroup>'
+            )
+            html = html[:tag_end] + colgroup + html[tag_end:]
     # 1c) weight-packing-table: NetWeight & GrossWeight header
     for m in re.finditer(r"<table(\s[^>]*)?>", html):
         tag = m.group(0)
