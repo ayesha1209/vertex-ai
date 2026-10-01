@@ -13,6 +13,7 @@ from re import Match
 from typing import Optional
 
 from app.services.export.print_css import EXPORT_PRINT_CSS
+from app.utils.memory import release_memory
 
 logger = logging.getLogger(__name__)
 
@@ -1287,6 +1288,11 @@ def _pdf_weasyprint(html: str) -> Optional[bytes]:
         # divs, header/footer mechanism) — log so a silent engine swap is visible in prod.
         logger.exception("WeasyPrint PDF generation failed; falling back to xhtml2pdf")
         return None
+    finally:
+        # WeasyPrint's cairo/pango allocations are native memory that CPython's GC
+        # never sees and glibc won't return to the OS on its own — without this,
+        # RSS climbs with every render until the process is OOM-killed.
+        release_memory()
 
 
 def _pdf_xhtml2pdf(html: str) -> bytes:

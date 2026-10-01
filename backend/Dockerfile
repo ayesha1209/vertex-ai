@@ -32,4 +32,13 @@ COPY . .
 ENV PORT=8000
 EXPOSE ${PORT}
 
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips="*"
+# glibc's malloc keeps freed arenas around per-thread instead of returning them
+# to the OS; with pandas/cairo/pango doing lots of large, short-lived native
+# allocations, that fragmentation ratchets process RSS up until the instance's
+# memory limit kills it. Capping arenas keeps that bounded. (app code also
+# calls malloc_trim after each heavy request — see app/utils/memory.py.)
+ENV MALLOC_ARENA_MAX=2
+
+# Safety net: recycle the process well before it could approach the memory
+# ceiling, as a graceful restart instead of an OOM SIGKILL mid-request.
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips="*" --limit-max-requests 500

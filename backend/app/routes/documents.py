@@ -38,6 +38,7 @@ from app.services.document_generation import generate_documents_for_row
 from app.services.export import html_to_pdf
 from app.services.invoice_generator import build_invoice_document, extract_quotation_data
 from app.utils.excel_parser import parse_excel_to_previews
+from app.utils.memory import release_memory
 
 
 def _strip_signatory_from_terms(text: str) -> str:
@@ -282,6 +283,11 @@ def _run_batch_sync(job_id: str, rows: list[RowPreview]) -> None:
                 except Exception:
                     pass
                 continue
+            finally:
+                # Row generation goes through pandas/OpenAI/prompt-building, which
+                # fragments the native heap; trim per row so a long batch doesn't
+                # creep the process toward the instance's memory ceiling.
+                release_memory()
             row_batch_id = getattr(docs_to_insert[0], "batch_id", None) if docs_to_insert else None
             if row_batch_id:
                 # So a client that lost the live SSE stream (reconnect, or this process
@@ -455,6 +461,10 @@ async def upload_preview(request: Request, file: UploadFile = File(...)) -> Uplo
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error reading file: {str(exc)[:200]}",
             ) from exc
+        finally:
+            # pandas/openpyxl decompress and hold the whole workbook in native
+            # memory; trim it back so repeated uploads don't ratchet up RSS.
+            release_memory()
     return UploadPreviewResponse(rows=previews)
 
 
